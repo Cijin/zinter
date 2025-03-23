@@ -40,6 +40,9 @@ const lexer = struct {
 };
 
 fn New(allocator: mem.Allocator, input: []const u8) !*lexer {
+    // Todo: use arena allocator, ensure arena.deinit() is called when the
+    // interpreter is done
+    // https://ziglang.org/documentation/0.14.0/#Choosing-an-Allocator
     var l = try allocator.create(lexer);
     l.* = lexer{
         .input = input,
