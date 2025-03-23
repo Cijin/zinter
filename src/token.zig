@@ -1,4 +1,4 @@
-const TokenType = enum {
+pub const TokenType = enum {
     Illegal,
     Eof,
     Ident,
@@ -15,7 +15,11 @@ const TokenType = enum {
     Let,
 };
 
-const Token = struct {
-    Type: TokenType,
-    //Literal: not sure what this should be yet
+pub const token = struct {
+    token_type: TokenType,
+    literal: u8,
 };
+
+pub fn new_token(t: TokenType, l: u8) token {
+    return token{ .token_type = t, .literal = l };
+}
