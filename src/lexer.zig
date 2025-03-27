@@ -2,7 +2,6 @@ const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
 const testing = std.testing;
-const expect = testing.expect;
 const token = @import("token.zig");
 
 const lexer = struct {
@@ -25,6 +24,9 @@ const lexer = struct {
 
     fn next_token(l: *lexer) token.token {
         var t: token.token = undefined;
+
+        l.skip_white_space();
+
         t = switch (l.ch) {
             '=' => token.token{ .token_type = token.TokenType.Assign, .literal = "=" },
             ';' => token.token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
@@ -41,17 +43,18 @@ const lexer = struct {
                 var end_position: usize = 0;
                 if (is_letter(l.ch)) {
                     l.read_identifier();
-                    end_position = @intCast(l.read_position);
+                    end_position = @intCast(l.position);
                     if (token.lookup_keyword(l.input[start_position..end_position])) |keyword_token| {
                         t = keyword_token;
                         return t;
                     }
                     return token.token{ .token_type = token.TokenType.Ident, .literal = l.input[start_position..end_position] };
                 } else if (is_integer(l.ch)) {
-                    end_position = @intCast(l.read_position);
+                    l.read_integer();
+                    end_position = @intCast(l.position);
                     return token.token{ .token_type = token.TokenType.Int, .literal = l.input[start_position..end_position] };
                 } else {
-                    return token.token{ .token_type = token.TokenType.Illegal, .literal = l.input[start_position..(start_position + 1)] };
+                    return token.token{ .token_type = token.TokenType.Illegal, .literal = l.input[start_position .. start_position + 1] };
                 }
             },
         };
@@ -70,15 +73,13 @@ const lexer = struct {
             l.read_char();
         }
     }
+
+    fn skip_white_space(l: *lexer) void {
+        while (is_white_space(l.ch)) {
+            l.read_char();
+        }
+    }
 };
-
-fn is_integer(ch: u8) bool {
-    return ch >= '0' and ch <= '9';
-}
-
-fn is_letter(ch: u8) bool {
-    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
-}
 
 fn New(allocator: mem.Allocator, input: []const u8) !*lexer {
     // Todo: use arena allocator, ensure arena.deinit() is called when the
@@ -93,6 +94,43 @@ fn New(allocator: mem.Allocator, input: []const u8) !*lexer {
     };
     l.read_char();
     return l;
+}
+
+fn is_integer(ch: u8) bool {
+    return ch >= '0' and ch <= '9';
+}
+
+fn is_letter(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
+}
+
+fn is_white_space(c: u8) bool {
+    return switch (c) {
+        ' ', '\t'...'\r' => true,
+        else => false,
+    };
+}
+
+test "is_letter method" {
+    const tests = [_]struct { input: u8, expected: bool }{
+        .{ .input = 'a', .expected = true },
+        .{ .input = 'z', .expected = true },
+        .{ .input = 'A', .expected = true },
+        .{ .input = 'Z', .expected = true },
+        .{ .input = '0', .expected = false },
+        .{ .input = '9', .expected = false },
+        .{ .input = ' ', .expected = false },
+        .{ .input = '_', .expected = true },
+        .{ .input = '.', .expected = false },
+        .{ .input = '@', .expected = false },
+        .{ .input = '[', .expected = false },
+        .{ .input = '`', .expected = false },
+        .{ .input = 127, .expected = false },
+    };
+
+    for (0..tests.len) |i| {
+        try testing.expectEqual(tests[i].expected, is_letter(tests[i].input));
+    }
 }
 
 test "next token method" {
@@ -113,8 +151,8 @@ test "next token method" {
     for (0..tests.len) |i| {
         const t = l.next_token();
 
-        try expect(tests[i].expected_type == t.token_type);
-        try expect(mem.eql(u8, tests[i].expected_literal, t.literal));
+        try testing.expectEqual(tests[i].expected_type, t.token_type);
+        try testing.expectEqualSlices(u8, tests[i].expected_literal, t.literal);
     }
 }
 
@@ -174,7 +212,7 @@ test "next token with source code" {
     for (0..tests.len) |i| {
         const t = l.next_token();
 
-        try expect(tests[i].expected_type == t.token_type);
-        try expect(mem.eql(u8, tests[i].expected_literal, t.literal));
+        try testing.expectEqual(tests[i].expected_type, t.token_type);
+        try testing.expectEqualSlices(u8, tests[i].expected_literal, t.literal);
     }
 }
