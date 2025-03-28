@@ -7,6 +7,8 @@ pub const TokenType = enum {
     Int,
     Bang,
     Assign,
+    Equal,
+    NotEqual,
     Plus,
     Minus,
     Asterix,

@@ -22,14 +22,38 @@ const lexer = struct {
         l.read_position += 1;
     }
 
+    fn peek_char(l: *lexer) u8 {
+        assert(l.read_position <= l.input.len);
+
+        if (l.read_position == l.input.len) {
+            return 0;
+        }
+
+        return l.input[@intCast(l.read_position)];
+    }
+
     fn next_token(l: *lexer) token.token {
         var t: token.token = undefined;
 
         l.skip_white_space();
 
         t = switch (l.ch) {
-            '=' => token.token{ .token_type = token.TokenType.Assign, .literal = "=" },
-            ';' => token.token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
+            '=' => blk: {
+                if (l.peek_char() == '=') {
+                    l.read_char();
+                    break :blk token.token{ .token_type = token.TokenType.Equal, .literal = "==" };
+                }
+
+                break :blk token.token{ .token_type = token.TokenType.Assign, .literal = "=" };
+            },
+            '!' => blk: {
+                if (l.peek_char() == '=') {
+                    l.read_char();
+                    break :blk token.token{ .token_type = token.TokenType.NotEqual, .literal = "!=" };
+                }
+
+                break :blk token.token{ .token_type = token.TokenType.Bang, .literal = "!" };
+            },
             ',' => token.token{ .token_type = token.TokenType.Comma, .literal = "," },
             '(' => token.token{ .token_type = token.TokenType.Lparen, .literal = "(" },
             ')' => token.token{ .token_type = token.TokenType.Rparen, .literal = ")" },
@@ -41,8 +65,7 @@ const lexer = struct {
             '*' => token.token{ .token_type = token.TokenType.Asterix, .literal = "*" },
             '<' => token.token{ .token_type = token.TokenType.Lt, .literal = "<" },
             '>' => token.token{ .token_type = token.TokenType.Gt, .literal = ">" },
-            '!' => token.token{ .token_type = token.TokenType.Bang, .literal = "!" },
-            // Todo: there might be a better way to do this
+            ';' => token.token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
             '0' => token.token{ .token_type = token.TokenType.Eof, .literal = undefined },
             else => {
                 const start_position: usize = @intCast(l.position);
@@ -179,6 +202,8 @@ test "next token with source code" {
         \\ } else {
         \\  return false;
         \\ }
+        \\ 10 == 10;
+        \\ 10 != 9;
     ;
     const tests = [_]struct { expected_type: token.TokenType, expected_literal: []const u8 }{
         .{ .expected_type = token.TokenType.Let, .expected_literal = "let" },
@@ -241,6 +266,14 @@ test "next token with source code" {
         .{ .expected_type = token.TokenType.False, .expected_literal = "false" },
         .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
         .{ .expected_type = token.TokenType.Rbrace, .expected_literal = "}" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "10" },
+        .{ .expected_type = token.TokenType.Equal, .expected_literal = "==" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "10" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "10" },
+        .{ .expected_type = token.TokenType.NotEqual, .expected_literal = "!=" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "9" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
     };
 
     const l = try New(testing.allocator, input);
