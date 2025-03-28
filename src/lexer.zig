@@ -36,7 +36,13 @@ const lexer = struct {
             '{' => token.token{ .token_type = token.TokenType.Lbrace, .literal = "{" },
             '}' => token.token{ .token_type = token.TokenType.Rbrace, .literal = "}" },
             '+' => token.token{ .token_type = token.TokenType.Plus, .literal = "+" },
-            // Todo: keep an eye on this, there might be a better way to do this
+            '-' => token.token{ .token_type = token.TokenType.Minus, .literal = "-" },
+            '/' => token.token{ .token_type = token.TokenType.Slash, .literal = "/" },
+            '*' => token.token{ .token_type = token.TokenType.Asterix, .literal = "*" },
+            '<' => token.token{ .token_type = token.TokenType.Lt, .literal = "<" },
+            '>' => token.token{ .token_type = token.TokenType.Gt, .literal = ">" },
+            '!' => token.token{ .token_type = token.TokenType.Bang, .literal = "!" },
+            // Todo: there might be a better way to do this
             '0' => token.token{ .token_type = token.TokenType.Eof, .literal = undefined },
             else => {
                 const start_position: usize = @intCast(l.position);
@@ -166,6 +172,13 @@ test "next token with source code" {
         \\ };
         \\
         \\ let result = add(five, ten);
+        \\ !/*-
+        \\ <>
+        \\ if (5 > 10) {
+        \\  return true;
+        \\ } else {
+        \\  return false;
+        \\ }
     ;
     const tests = [_]struct { expected_type: token.TokenType, expected_literal: []const u8 }{
         .{ .expected_type = token.TokenType.Let, .expected_literal = "let" },
@@ -205,6 +218,29 @@ test "next token with source code" {
         .{ .expected_type = token.TokenType.Ident, .expected_literal = "ten" },
         .{ .expected_type = token.TokenType.Rparen, .expected_literal = ")" },
         .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+        .{ .expected_type = token.TokenType.Bang, .expected_literal = "!" },
+        .{ .expected_type = token.TokenType.Slash, .expected_literal = "/" },
+        .{ .expected_type = token.TokenType.Asterix, .expected_literal = "*" },
+        .{ .expected_type = token.TokenType.Minus, .expected_literal = "-" },
+        .{ .expected_type = token.TokenType.Lt, .expected_literal = "<" },
+        .{ .expected_type = token.TokenType.Gt, .expected_literal = ">" },
+        .{ .expected_type = token.TokenType.If, .expected_literal = "if" },
+        .{ .expected_type = token.TokenType.Lparen, .expected_literal = "(" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "5" },
+        .{ .expected_type = token.TokenType.Gt, .expected_literal = ">" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "10" },
+        .{ .expected_type = token.TokenType.Rparen, .expected_literal = ")" },
+        .{ .expected_type = token.TokenType.Lbrace, .expected_literal = "{" },
+        .{ .expected_type = token.TokenType.Return, .expected_literal = "return" },
+        .{ .expected_type = token.TokenType.True, .expected_literal = "true" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+        .{ .expected_type = token.TokenType.Rbrace, .expected_literal = "}" },
+        .{ .expected_type = token.TokenType.Else, .expected_literal = "else" },
+        .{ .expected_type = token.TokenType.Lbrace, .expected_literal = "{" },
+        .{ .expected_type = token.TokenType.Return, .expected_literal = "return" },
+        .{ .expected_type = token.TokenType.False, .expected_literal = "false" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+        .{ .expected_type = token.TokenType.Rbrace, .expected_literal = "}" },
     };
 
     const l = try New(testing.allocator, input);
