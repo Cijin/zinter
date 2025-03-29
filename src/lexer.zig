@@ -11,9 +11,9 @@ const lexer = struct {
     ch: u8,
 
     fn read_char(l: *lexer) void {
-        assert(l.read_position <= l.input.len);
+        assert(l.position <= l.input.len);
 
-        if (l.read_position == l.input.len) {
+        if (l.read_position >= l.input.len) {
             l.ch = 0;
         } else {
             l.ch = l.input[@intCast(l.read_position)];
@@ -23,16 +23,16 @@ const lexer = struct {
     }
 
     fn peek_char(l: *lexer) u8 {
-        assert(l.read_position <= l.input.len);
+        assert(l.position <= l.input.len);
 
-        if (l.read_position == l.input.len) {
+        if (l.read_position >= l.input.len) {
             return 0;
         }
 
         return l.input[@intCast(l.read_position)];
     }
 
-    fn next_token(l: *lexer) token.token {
+    pub fn next_token(l: *lexer) token.token {
         var t: token.token = undefined;
 
         l.skip_white_space();
@@ -66,7 +66,7 @@ const lexer = struct {
             '<' => token.token{ .token_type = token.TokenType.Lt, .literal = "<" },
             '>' => token.token{ .token_type = token.TokenType.Gt, .literal = ">" },
             ';' => token.token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
-            '0' => token.token{ .token_type = token.TokenType.Eof, .literal = undefined },
+            0 => token.token{ .token_type = token.TokenType.Eof, .literal = undefined },
             else => {
                 const start_position: usize = @intCast(l.position);
                 var end_position: usize = 0;
@@ -110,7 +110,7 @@ const lexer = struct {
     }
 };
 
-fn New(allocator: mem.Allocator, input: []const u8) !*lexer {
+pub fn New(allocator: mem.Allocator, input: []const u8) !*lexer {
     // Todo: use arena allocator, ensure arena.deinit() is called when the
     // interpreter is done
     // https://ziglang.org/documentation/0.14.0/#Choosing-an-Allocator
