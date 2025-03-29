@@ -20,8 +20,10 @@ pub fn start() !void {
     var program_buffer: [4096]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&program_buffer);
     const allocator = fba.allocator();
-    // Todo: write lexer errors to stderr
-    const l = try lexer.New(allocator, result);
+    const l = lexer.New(allocator, result) catch |err| {
+        std.debug.print("Unable to parse input, lexer failed with error={any}\n", .{err});
+        return;
+    };
     defer allocator.destroy(l);
 
     var tok = l.next_token();
