@@ -30,26 +30,26 @@ pub const TokenType = enum {
     Return,
 };
 
-pub const token = struct {
+pub const Token = struct {
     token_type: TokenType,
     literal: []const u8,
 };
 
-pub fn new_token(t: TokenType, l: []const u8) token {
-    return token{ .token_type = t, .literal = l };
+pub fn new_token(t: TokenType, l: []const u8) Token {
+    return Token{ .token_type = t, .literal = l };
 }
 
-pub const keywords = [_]struct { key: []const u8, token: token }{
-    .{ .key = "let", .token = token{ .token_type = TokenType.Let, .literal = "let" } },
-    .{ .key = "fn", .token = token{ .token_type = TokenType.Function, .literal = "fn" } },
-    .{ .key = "return", .token = token{ .token_type = TokenType.Return, .literal = "return" } },
-    .{ .key = "if", .token = token{ .token_type = TokenType.If, .literal = "if" } },
-    .{ .key = "else", .token = token{ .token_type = TokenType.Else, .literal = "else" } },
-    .{ .key = "true", .token = token{ .token_type = TokenType.True, .literal = "true" } },
-    .{ .key = "false", .token = token{ .token_type = TokenType.False, .literal = "false" } },
+pub const keywords = [_]struct { key: []const u8, token: Token }{
+    .{ .key = "let", .token = Token{ .token_type = TokenType.Let, .literal = "let" } },
+    .{ .key = "fn", .token = Token{ .token_type = TokenType.Function, .literal = "fn" } },
+    .{ .key = "return", .token = Token{ .token_type = TokenType.Return, .literal = "return" } },
+    .{ .key = "if", .token = Token{ .token_type = TokenType.If, .literal = "if" } },
+    .{ .key = "else", .token = Token{ .token_type = TokenType.Else, .literal = "else" } },
+    .{ .key = "true", .token = Token{ .token_type = TokenType.True, .literal = "true" } },
+    .{ .key = "false", .token = Token{ .token_type = TokenType.False, .literal = "false" } },
 };
 
-pub fn lookup_keyword(k: []const u8) ?token {
+pub fn lookup_keyword(k: []const u8) ?Token {
     for (keywords) |keyword| {
         if (std.mem.eql(u8, k, keyword.key)) {
             return keyword.token;

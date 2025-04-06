@@ -32,8 +32,8 @@ const lexer = struct {
         return l.input[@intCast(l.read_position)];
     }
 
-    pub fn next_token(l: *lexer) token.token {
-        var t: token.token = undefined;
+    pub fn next_token(l: *lexer) token.Token {
+        var t: token.Token = undefined;
 
         l.skip_white_space();
 
@@ -41,32 +41,32 @@ const lexer = struct {
             '=' => blk: {
                 if (l.peek_char() == '=') {
                     l.read_char();
-                    break :blk token.token{ .token_type = token.TokenType.Equal, .literal = "==" };
+                    break :blk token.Token{ .token_type = token.TokenType.Equal, .literal = "==" };
                 }
 
-                break :blk token.token{ .token_type = token.TokenType.Assign, .literal = "=" };
+                break :blk token.Token{ .token_type = token.TokenType.Assign, .literal = "=" };
             },
             '!' => blk: {
                 if (l.peek_char() == '=') {
                     l.read_char();
-                    break :blk token.token{ .token_type = token.TokenType.NotEqual, .literal = "!=" };
+                    break :blk token.Token{ .token_type = token.TokenType.NotEqual, .literal = "!=" };
                 }
 
-                break :blk token.token{ .token_type = token.TokenType.Bang, .literal = "!" };
+                break :blk token.Token{ .token_type = token.TokenType.Bang, .literal = "!" };
             },
-            ',' => token.token{ .token_type = token.TokenType.Comma, .literal = "," },
-            '(' => token.token{ .token_type = token.TokenType.Lparen, .literal = "(" },
-            ')' => token.token{ .token_type = token.TokenType.Rparen, .literal = ")" },
-            '{' => token.token{ .token_type = token.TokenType.Lbrace, .literal = "{" },
-            '}' => token.token{ .token_type = token.TokenType.Rbrace, .literal = "}" },
-            '+' => token.token{ .token_type = token.TokenType.Plus, .literal = "+" },
-            '-' => token.token{ .token_type = token.TokenType.Minus, .literal = "-" },
-            '/' => token.token{ .token_type = token.TokenType.Slash, .literal = "/" },
-            '*' => token.token{ .token_type = token.TokenType.Asterix, .literal = "*" },
-            '<' => token.token{ .token_type = token.TokenType.Lt, .literal = "<" },
-            '>' => token.token{ .token_type = token.TokenType.Gt, .literal = ">" },
-            ';' => token.token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
-            0 => token.token{ .token_type = token.TokenType.Eof, .literal = undefined },
+            ',' => token.Token{ .token_type = token.TokenType.Comma, .literal = "," },
+            '(' => token.Token{ .token_type = token.TokenType.Lparen, .literal = "(" },
+            ')' => token.Token{ .token_type = token.TokenType.Rparen, .literal = ")" },
+            '{' => token.Token{ .token_type = token.TokenType.Lbrace, .literal = "{" },
+            '}' => token.Token{ .token_type = token.TokenType.Rbrace, .literal = "}" },
+            '+' => token.Token{ .token_type = token.TokenType.Plus, .literal = "+" },
+            '-' => token.Token{ .token_type = token.TokenType.Minus, .literal = "-" },
+            '/' => token.Token{ .token_type = token.TokenType.Slash, .literal = "/" },
+            '*' => token.Token{ .token_type = token.TokenType.Asterix, .literal = "*" },
+            '<' => token.Token{ .token_type = token.TokenType.Lt, .literal = "<" },
+            '>' => token.Token{ .token_type = token.TokenType.Gt, .literal = ">" },
+            ';' => token.Token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
+            0 => token.Token{ .token_type = token.TokenType.Eof, .literal = undefined },
             else => {
                 const start_position: usize = @intCast(l.position);
                 var end_position: usize = 0;
@@ -77,13 +77,13 @@ const lexer = struct {
                         t = keyword_token;
                         return t;
                     }
-                    return token.token{ .token_type = token.TokenType.Ident, .literal = l.input[start_position..end_position] };
+                    return token.Token{ .token_type = token.TokenType.Ident, .literal = l.input[start_position..end_position] };
                 } else if (is_integer(l.ch)) {
                     l.read_integer();
                     end_position = @intCast(l.position);
-                    return token.token{ .token_type = token.TokenType.Int, .literal = l.input[start_position..end_position] };
+                    return token.Token{ .token_type = token.TokenType.Int, .literal = l.input[start_position..end_position] };
                 } else {
-                    return token.token{ .token_type = token.TokenType.Illegal, .literal = l.input[start_position .. start_position + 1] };
+                    return token.Token{ .token_type = token.TokenType.Illegal, .literal = l.input[start_position .. start_position + 1] };
                 }
             },
         };
