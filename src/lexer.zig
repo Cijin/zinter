@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
 const testing = std.testing;
+
 const token = @import("token.zig");
 
 const lexer = struct {
