@@ -5,7 +5,7 @@ const testing = std.testing;
 
 const token = @import("token.zig");
 
-const lexer = struct {
+pub const lexer = struct {
     input: []const u8,
     position: i64,
     read_position: i64,
