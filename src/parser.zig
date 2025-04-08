@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const testing = std.testing;
 const lexer = @import("lexer");
 const token = @import("token");
 
@@ -25,4 +26,26 @@ fn New(l: *lexer.lexer, _: mem.Allocator) *parser {
     p.next_token();
 
     return p;
+}
+
+test "let statement parser" {
+    const input =
+        \\ let x = 5;
+        \\ let y = 10;
+        \\ let foo = 69
+    ;
+
+    const l = try lexer.New(testing.allocator, input);
+    defer testing.destroy(l);
+    const p = New(l, testing.allocator);
+    defer testing.destroy(p);
+
+    const program = p.parse_program();
+
+    const tests = [_][3]u8{ "x", "y", "foo" };
+    for (tests) |t| {
+        // Todo: create test let statement fn
+        _ = t;
+        _ = program;
+    }
 }
