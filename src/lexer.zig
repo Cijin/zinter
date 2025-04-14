@@ -12,8 +12,6 @@ pub const lexer = struct {
     ch: u8,
 
     fn read_char(l: *lexer) void {
-        assert(l.position <= l.input.len);
-
         if (l.read_position >= l.input.len) {
             l.ch = 0;
         } else {
