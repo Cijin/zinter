@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
@@ -11,8 +12,13 @@ const parser = struct {
     l: *lexer.lexer,
     cur_token: token.Token,
     peek_token: token.Token,
+    allocator: mem.Allocator,
+    errors: [32][]const u8,
+    error_count: u32,
 
     fn next_token(self: *parser) void {
+        assert(self.cur_token.token_type != token.TokenType.Eof);
+
         self.cur_token = self.peek_token;
         self.peek_token = self.l.next_token();
     }
@@ -21,12 +27,18 @@ const parser = struct {
         return self.peek_token.token_type == expected;
     }
 
+    fn peek_error(self: *parser, expected: token.TokenType) !void {
+        self.errors[self.error_count] = try fmt.allocPrint(self.allocator, "expected next token to be {s} but found {s}\n", .{ @tagName(expected), @tagName(self.peek_token.token_type) });
+        self.error_count += 1;
+    }
+
     fn expect_peek(self: *parser, expected: token.TokenType) bool {
         if (self.peek_token_is(expected)) {
             self.next_token();
             return true;
         }
 
+        self.peek_error(expected) catch unreachable;
         return false;
     }
 
@@ -94,6 +106,9 @@ fn New(allocator: mem.Allocator, l: *lexer.lexer) !*parser {
         .l = l,
         .cur_token = undefined,
         .peek_token = undefined,
+        .allocator = allocator,
+        .errors = undefined,
+        .error_count = 0,
     };
 
     p.next_token();
@@ -115,6 +130,7 @@ test "let statement parser" {
     defer testing.allocator.destroy(p);
 
     const program = p.parse_program();
+    assert(p.error_count == 0);
 
     const tests = [_]struct { expected_name: []const u8 }{
         .{ .expected_name = "x" },
