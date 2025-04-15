@@ -70,8 +70,32 @@ const parser = struct {
 
                 return null;
             },
+            token.TokenType.Return => {
+                const return_stmt = self.parse_return_statement();
+                if (return_stmt) |stmt| {
+                    return ast.Statement{ .return_statement = stmt };
+                }
+
+                return null;
+            },
             else => return null,
         }
+    }
+
+    fn parse_return_statement(self: *parser) ?ast.ReturnStatement {
+        const return_stmt = ast.ReturnStatement{
+            .token = self.cur_token,
+            .return_value = undefined,
+        };
+
+        self.next_token();
+
+        // Todo: implement expression evaluation
+        while (!self.peek_token_is(token.TokenType.Semicolon)) {
+            self.next_token();
+        }
+
+        return return_stmt;
     }
 
     fn parse_let_statement(self: *parser) ?ast.LetStatement {
@@ -143,8 +167,40 @@ test "let statement parser" {
     }
 }
 
+test "return statement parser" {
+    const input =
+        \\ return 5;
+        \\ return 10;
+        \\ return 69;
+    ;
+
+    const l = try lexer.New(testing.allocator, input);
+    defer testing.allocator.destroy(l);
+    const p = try New(testing.allocator, l);
+    defer testing.allocator.destroy(p);
+
+    const program = p.parse_program();
+    assert(p.error_count == 0);
+
+    const tests = [_]struct { expected_return_value: []const u8 }{
+        .{ .expected_return_value = "5" },
+        .{ .expected_return_value = "10" },
+        .{ .expected_return_value = "69" },
+    };
+    assert(program.statements.len == tests.len);
+    for (program.statements) |stmt| {
+        try test_return_statement(stmt);
+    }
+}
+
+fn test_return_statement(stmt: ast.Statement) !void {
+    assert(@as(std.meta.Tag(ast.Statement), stmt) == .return_statement);
+
+    // Todo: test return_value.
+    try testing.expectEqualStrings(stmt.return_statement.token_literal(), "return");
+}
+
 fn test_let_statement(stmt: ast.Statement, expected_name: []const u8) !void {
-    assert(@TypeOf(stmt) == ast.Statement);
     assert(@as(std.meta.Tag(ast.Statement), stmt) == .let_statement);
 
     try testing.expectEqualStrings(stmt.let_statement.name.value, expected_name);
