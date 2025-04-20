@@ -1,38 +1,52 @@
 const std = @import("std");
+const lexer = @import("lexer.zig");
+const token = @import("token.zig");
+const ast = @import("ast.zig");
 const mem = std.mem;
 const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-const lexer = @import("lexer.zig");
-const token = @import("token.zig");
-const ast = @import("ast.zig");
+const infix_parse_fn = *const fn (ast.Expression) ast.Expression;
+const prefix_parse_fn = *const fn () ast.Expression;
 
-const parser = struct {
+const precedence = enum(u4) {
+    lowest = 1,
+    equals,
+    less_greater,
+    sum,
+    product,
+    prefix,
+    call,
+};
+
+const Parser = struct {
     l: *lexer.lexer,
     cur_token: token.Token,
     peek_token: token.Token,
     allocator: mem.Allocator,
     errors: [32][]const u8,
     error_count: u32,
+    prefix_parse_fns: std.AutoHashMap(token.TokenType, prefix_parse_fn),
+    infix_parse_fns: std.AutoHashMap(token.TokenType, infix_parse_fn),
 
-    fn next_token(self: *parser) void {
+    fn next_token(self: *Parser) void {
         assert(self.cur_token.token_type != token.TokenType.Eof);
 
         self.cur_token = self.peek_token;
         self.peek_token = self.l.next_token();
     }
 
-    fn peek_token_is(self: *parser, expected: token.TokenType) bool {
+    fn peek_token_is(self: *Parser, expected: token.TokenType) bool {
         return self.peek_token.token_type == expected;
     }
 
-    fn peek_error(self: *parser, expected: token.TokenType) !void {
+    fn peek_error(self: *Parser, expected: token.TokenType) !void {
         self.errors[self.error_count] = try fmt.allocPrint(self.allocator, "expected next token to be {s} but found {s}\n", .{ @tagName(expected), @tagName(self.peek_token.token_type) });
         self.error_count += 1;
     }
 
-    fn expect_peek(self: *parser, expected: token.TokenType) bool {
+    fn expect_peek(self: *Parser, expected: token.TokenType) bool {
         if (self.peek_token_is(expected)) {
             self.next_token();
             return true;
@@ -42,7 +56,7 @@ const parser = struct {
         return false;
     }
 
-    fn parse_program(self: *parser) ast.Program {
+    fn parse_program(self: *Parser) ast.Program {
         var stmts: [4096]ast.Statement = undefined;
         var idx: usize = 0;
         while (self.cur_token.token_type != token.TokenType.Eof) {
@@ -60,7 +74,7 @@ const parser = struct {
         };
     }
 
-    fn parse_statement(self: *parser) ?ast.Statement {
+    fn parse_statement(self: *Parser) ?ast.Statement {
         switch (self.cur_token.token_type) {
             token.TokenType.Let => {
                 const let_stmt = self.parse_let_statement();
@@ -82,7 +96,7 @@ const parser = struct {
         }
     }
 
-    fn parse_return_statement(self: *parser) ?ast.ReturnStatement {
+    fn parse_return_statement(self: *Parser) ?ast.ReturnStatement {
         const return_stmt = ast.ReturnStatement{
             .token = self.cur_token,
             .return_value = undefined,
@@ -98,7 +112,7 @@ const parser = struct {
         return return_stmt;
     }
 
-    fn parse_let_statement(self: *parser) ?ast.LetStatement {
+    fn parse_let_statement(self: *Parser) ?ast.LetStatement {
         var let_stmt = ast.LetStatement{
             .token = self.cur_token,
             .name = undefined,
@@ -122,18 +136,31 @@ const parser = struct {
 
         return let_stmt;
     }
+
+    fn register_prefix(self: *Parser, k: token.TokenType, v: prefix_parse_fn) !void {
+        try self.prefix_parse_fns.put(k, v);
+    }
+
+    fn parse_identifier(self: *Parser) ast.Expression {
+        return ast.Expression{ .identifier = ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal } };
+    }
 };
 
-fn New(allocator: mem.Allocator, l: *lexer.lexer) !*parser {
-    var p = try allocator.create(parser);
-    p.* = parser{
+fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
+    var p = try allocator.create(Parser);
+    p.* = Parser{
         .l = l,
         .cur_token = undefined,
         .peek_token = undefined,
         .allocator = allocator,
         .errors = undefined,
         .error_count = 0,
+        .prefix_parse_fns = std.AutoHashMap(token.TokenType, prefix_parse_fn).init(allocator),
+        .infix_parse_fns = std.AutoHashMap(token.TokenType, infix_parse_fn).init(allocator),
     };
+
+    // Todo: fix the error that p.parse_identifier is not a valid field name
+    p.register_prefix(token.TokenType.Ident, p.parse_identifier);
 
     p.next_token();
     p.next_token();
