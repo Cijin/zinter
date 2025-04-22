@@ -28,6 +28,7 @@ pub const Statement = union(enum) {
     }
 };
 
+// Todo: make all fields pointers
 pub const Expression = union(enum) {
     identifier: Identifier,
     integer: Integer,
