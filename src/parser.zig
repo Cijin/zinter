@@ -10,7 +10,7 @@ const assert = std.debug.assert;
 const infix_parse_fn = *const fn (p: *Parser, ast.Expression) ast.Expression;
 const prefix_parse_fn = *const fn (p: *Parser) ast.Expression;
 
-const precedence = enum(u4) {
+const operator_precedence = enum(u4) {
     lowest = 1,
     equals,
     less_greater,
@@ -161,14 +161,40 @@ const Parser = struct {
         return ast.Expression{ .integer = ast.Integer{ .token = self.cur_token, .value = parsed_int } };
     }
 
+    fn parse_prefix_expression(self: *Parser) ast.Expression {
+        var prefix_expression = ast.PrefixExpression{
+            .token = self.cur_token,
+            .operator = self.cur_token.literal,
+            .right = undefined,
+        };
+
+        self.next_token();
+        prefix_expression.right = self.parse_expression();
+
+        return ast.Expression{ .prefix_expression = &prefix_expression };
+    }
+
     fn free(self: *Parser) void {
         self.prefix_parse_fns.clearAndFree();
         self.infix_parse_fns.clearAndFree();
     }
 
-    // Todo: parse expression
+    // Todo: precedence
+    fn parse_expression(self: *Parser) ast.Expression {
+        if (self.prefix_parse_fns.get(self.cur_token.token_type)) |prefix| {
+            return prefix(self);
+        }
+
+        self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no prefix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
+        self.error_count += 1;
+
+        return ast.Expression{ .nil_expression = ast.NilExpression{ .token = token.Token{ .token_type = token.TokenType.Illegal, .literal = self.cur_token.literal } } };
+    }
 };
 
+// Todo:
+// 1. Test expressions with integers
+// 2. Test prefix expressions
 fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     var p = try allocator.create(Parser);
     p.* = Parser{
@@ -184,6 +210,8 @@ fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
 
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
     try p.register_prefix(token.TokenType.Int, Parser.parse_integer);
+    try p.register_prefix(token.TokenType.Bang, Parser.parse_prefix_expression);
+    try p.register_prefix(token.TokenType.Minus, Parser.parse_prefix_expression);
 
     p.next_token();
     p.next_token();

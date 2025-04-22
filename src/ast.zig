@@ -31,6 +31,9 @@ pub const Statement = union(enum) {
 pub const Expression = union(enum) {
     identifier: Identifier,
     integer: Integer,
+    // Todo: Expression depends on itself
+    prefix_expression: *PrefixExpression,
+    nil_expression: NilExpression,
 
     fn token_literal(self: Expression) []const u8 {
         switch (self) {
@@ -86,5 +89,23 @@ pub const Integer = struct {
 
     pub fn token_literal(self: Integer) []const u8 {
         return self.token.literal;
+    }
+};
+
+pub const PrefixExpression = struct {
+    token: token.Token,
+    operator: []const u8,
+    right: Expression,
+
+    pub fn token_literal(self: PrefixExpression) []const u8 {
+        return self.token.litera;
+    }
+};
+
+pub const NilExpression = struct {
+    token: token.Token,
+
+    pub fn token_literal(_: NilExpression) []const u8 {
+        return "you messed up, son";
     }
 };
