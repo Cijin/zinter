@@ -30,6 +30,7 @@ pub const Statement = union(enum) {
 
 pub const Expression = union(enum) {
     identifier: Identifier,
+    integer: Integer,
 
     fn token_literal(self: Expression) []const u8 {
         switch (self) {
@@ -75,6 +76,15 @@ pub const Identifier = struct {
     value: []const u8,
 
     pub fn token_literal(self: Identifier) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const Integer = struct {
+    token: token.Token,
+    value: i64,
+
+    pub fn token_literal(self: Integer) []const u8 {
         return self.token.literal;
     }
 };

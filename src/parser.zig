@@ -7,8 +7,8 @@ const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-const infix_parse_fn = *const fn (ast.Expression) ast.Expression;
-const prefix_parse_fn = *const fn () ast.Expression;
+const infix_parse_fn = *const fn (p: *Parser, ast.Expression) ast.Expression;
+const prefix_parse_fn = *const fn (p: *Parser) ast.Expression;
 
 const precedence = enum(u4) {
     lowest = 1,
@@ -25,10 +25,13 @@ const Parser = struct {
     cur_token: token.Token,
     peek_token: token.Token,
     allocator: mem.Allocator,
+    // Todo: fix this at some point
     errors: [32][]const u8,
     error_count: u32,
     prefix_parse_fns: std.AutoHashMap(token.TokenType, prefix_parse_fn),
     infix_parse_fns: std.AutoHashMap(token.TokenType, infix_parse_fn),
+
+    // Todo: create a method to handle errors better, i.e. keep the actual error instead of just a string
 
     fn next_token(self: *Parser) void {
         assert(self.cur_token.token_type != token.TokenType.Eof);
@@ -92,6 +95,7 @@ const Parser = struct {
 
                 return null;
             },
+            // Todo: update to handle expressions
             else => return null,
         }
     }
@@ -144,6 +148,25 @@ const Parser = struct {
     fn parse_identifier(self: *Parser) ast.Expression {
         return ast.Expression{ .identifier = ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal } };
     }
+
+    fn parse_integer(self: *Parser) ast.Expression {
+        const parsed_int = fmt.parseInt(i64, self.cur_token.literal, 10) catch {
+            self.errors[self.error_count] = "failed to parse integer literal";
+            self.error_count += 1;
+
+            // Todo: this can be done better
+            return ast.Expression{ .integer = ast.Integer{ .token = self.cur_token, .value = -1 } };
+        };
+
+        return ast.Expression{ .integer = ast.Integer{ .token = self.cur_token, .value = parsed_int } };
+    }
+
+    fn free(self: *Parser) void {
+        self.prefix_parse_fns.clearAndFree();
+        self.infix_parse_fns.clearAndFree();
+    }
+
+    // Todo: parse expression
 };
 
 fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
@@ -159,8 +182,8 @@ fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
         .infix_parse_fns = std.AutoHashMap(token.TokenType, infix_parse_fn).init(allocator),
     };
 
-    // Todo: fix the error that p.parse_identifier is not a valid field name
-    p.register_prefix(token.TokenType.Ident, p.parse_identifier);
+    try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
+    try p.register_prefix(token.TokenType.Int, Parser.parse_integer);
 
     p.next_token();
     p.next_token();
@@ -176,9 +199,12 @@ test "let statement parser" {
     ;
 
     const l = try lexer.New(testing.allocator, input);
-    defer testing.allocator.destroy(l);
     const p = try New(testing.allocator, l);
-    defer testing.allocator.destroy(p);
+    defer {
+        p.free();
+        testing.allocator.destroy(p);
+        testing.allocator.destroy(l);
+    }
 
     const program = p.parse_program();
     assert(p.error_count == 0);
@@ -202,9 +228,12 @@ test "return statement parser" {
     ;
 
     const l = try lexer.New(testing.allocator, input);
-    defer testing.allocator.destroy(l);
     const p = try New(testing.allocator, l);
-    defer testing.allocator.destroy(p);
+    defer {
+        p.free();
+        testing.allocator.destroy(p);
+        testing.allocator.destroy(l);
+    }
 
     const program = p.parse_program();
     assert(p.error_count == 0);
