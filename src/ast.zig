@@ -10,7 +10,6 @@ pub const Node = union(enum) {
 
     fn token_literal(self: Node) []const u8 {
         switch (self) {
-            null => unreachable,
             inline else => |impl| return impl.token_literal(),
         }
     }
@@ -20,26 +19,22 @@ pub const Statement = union(enum) {
     let_statement: LetStatement,
     return_statement: ReturnStatement,
 
-    fn token_literal(self: Statement) []const u8 {
+    pub fn token_literal(self: Statement) []const u8 {
         switch (self) {
-            null => unreachable,
             inline else => |impl| return impl.token_literal(),
         }
     }
 };
 
-// Todo: make all fields pointers
 pub const Expression = union(enum) {
     identifier: Identifier,
     integer: Integer,
-    // Todo: Expression depends on itself
     prefix_expression: *PrefixExpression,
     nil_expression: NilExpression,
 
-    fn token_literal(self: Expression) []const u8 {
+    pub fn token_literal(self: Expression, allocator: mem.Allocator) []const u8 {
         switch (self) {
-            null => unreachable,
-            inline else => |impl| return impl.token_literal(),
+            inline else => |impl| return impl.token_literal(allocator),
         }
     }
 };
@@ -79,7 +74,7 @@ pub const Identifier = struct {
     token: token.Token,
     value: []const u8,
 
-    pub fn token_literal(self: Identifier) []const u8 {
+    pub fn token_literal(self: Identifier, _: mem.Allocator) []const u8 {
         return self.token.literal;
     }
 };
@@ -88,7 +83,7 @@ pub const Integer = struct {
     token: token.Token,
     value: i64,
 
-    pub fn token_literal(self: Integer) []const u8 {
+    pub fn token_literal(self: Integer, _: mem.Allocator) []const u8 {
         return self.token.literal;
     }
 };
@@ -98,15 +93,17 @@ pub const PrefixExpression = struct {
     operator: []const u8,
     right: Expression,
 
-    pub fn token_literal(self: PrefixExpression) []const u8 {
-        return self.token.litera;
+    pub fn token_literal(self: PrefixExpression, allocator: mem.Allocator) []const u8 {
+        // Todo: handle or return error
+        const prefix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.operator, self.right.token_literal(allocator) }) catch unreachable;
+        return prefix_expression_literal;
     }
 };
 
 pub const NilExpression = struct {
     token: token.Token,
 
-    pub fn token_literal(_: NilExpression) []const u8 {
+    pub fn token_literal(_: NilExpression, _: mem.Allocator) []const u8 {
         return "you messed up, son";
     }
 };

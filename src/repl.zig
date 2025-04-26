@@ -1,6 +1,7 @@
 const std = @import("std");
 const io = std.io;
 const lexer = @import("lexer.zig");
+const parser = @import("parser.zig");
 const token = @import("token.zig");
 
 const prompt = ">>";
@@ -24,12 +25,19 @@ pub fn start() !void {
         std.debug.print("Unable to parse input, lexer failed with error={any}\n", .{err});
         return;
     };
-    defer allocator.destroy(l);
+    const p = parser.New(allocator, l) catch |err| {
+        std.debug.print("Unable to parse input, parser failed with error={any}\n", .{err});
+        return;
+    };
+    defer {
+        p.free();
+        allocator.destroy(p);
+        allocator.destroy(l);
+    }
 
-    var tok = l.next_token();
-    while (tok.token_type != token.TokenType.Eof) {
-        try stdout.print("TokenType = {s} | Literal = '{s}'\n", .{ @tagName(tok.token_type), tok.literal });
-        tok = l.next_token();
+    const program = p.parse_program();
+    for (program.statements) |stmt| {
+        try stdout.print("{s}\n", .{stmt.token_literal()});
     }
 
     try bw.flush();

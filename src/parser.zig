@@ -32,7 +32,6 @@ const Parser = struct {
     infix_parse_fns: std.AutoHashMap(token.TokenType, infix_parse_fn),
 
     // Todo: create a method to handle errors better, i.e. keep the actual error instead of just a string
-
     fn next_token(self: *Parser) void {
         assert(self.cur_token.token_type != token.TokenType.Eof);
 
@@ -59,7 +58,7 @@ const Parser = struct {
         return false;
     }
 
-    fn parse_program(self: *Parser) ast.Program {
+    pub fn parse_program(self: *Parser) ast.Program {
         var stmts: [4096]ast.Statement = undefined;
         var idx: usize = 0;
         while (self.cur_token.token_type != token.TokenType.Eof) {
@@ -81,11 +80,7 @@ const Parser = struct {
         switch (self.cur_token.token_type) {
             token.TokenType.Let => {
                 const let_stmt = self.parse_let_statement();
-                if (let_stmt) |stmt| {
-                    return ast.Statement{ .let_statement = stmt };
-                }
-
-                return null;
+                return ast.Statement{ .let_statement = let_stmt };
             },
             token.TokenType.Return => {
                 const return_stmt = self.parse_return_statement();
@@ -116,7 +111,7 @@ const Parser = struct {
         return return_stmt;
     }
 
-    fn parse_let_statement(self: *Parser) ?ast.LetStatement {
+    fn parse_let_statement(self: *Parser) ast.LetStatement {
         var let_stmt = ast.LetStatement{
             .token = self.cur_token,
             .name = undefined,
@@ -124,7 +119,7 @@ const Parser = struct {
         };
 
         if (!self.expect_peek(token.TokenType.Ident)) {
-            return null;
+            return let_stmt;
         }
 
         const ident = ast.Identifier{
@@ -133,10 +128,12 @@ const Parser = struct {
         };
         let_stmt.name = ident;
 
-        // Todo: implement expression evaluation
-        while (!self.peek_token_is(token.TokenType.Semicolon)) {
-            self.next_token();
+        if (!self.expect_peek(token.TokenType.Assign)) {
+            return let_stmt;
         }
+
+        self.next_token();
+        let_stmt.value = self.parse_expression();
 
         return let_stmt;
     }
@@ -162,7 +159,8 @@ const Parser = struct {
     }
 
     fn parse_prefix_expression(self: *Parser) ast.Expression {
-        var prefix_expression = ast.PrefixExpression{
+        var prefix_expression = self.allocator.create(ast.PrefixExpression) catch unreachable;
+        prefix_expression.* = ast.PrefixExpression{
             .token = self.cur_token,
             .operator = self.cur_token.literal,
             .right = undefined,
@@ -171,12 +169,7 @@ const Parser = struct {
         self.next_token();
         prefix_expression.right = self.parse_expression();
 
-        return ast.Expression{ .prefix_expression = &prefix_expression };
-    }
-
-    fn free(self: *Parser) void {
-        self.prefix_parse_fns.clearAndFree();
-        self.infix_parse_fns.clearAndFree();
+        return ast.Expression{ .prefix_expression = prefix_expression };
     }
 
     // Todo: precedence
@@ -195,7 +188,7 @@ const Parser = struct {
 // Todo:
 // 1. Test expressions with integers
 // 2. Test prefix expressions
-fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
+pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     var p = try allocator.create(Parser);
     p.* = Parser{
         .l = l,
@@ -226,14 +219,12 @@ test "let statement parser" {
         \\ let foo = 69;
     ;
 
-    const l = try lexer.New(testing.allocator, input);
-    const p = try New(testing.allocator, l);
-    defer {
-        p.free();
-        testing.allocator.destroy(p);
-        testing.allocator.destroy(l);
-    }
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
     const program = p.parse_program();
     assert(p.error_count == 0);
 
@@ -244,7 +235,7 @@ test "let statement parser" {
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
-        try test_let_statement(stmt, tests[i].expected_name);
+        try test_let_statement(allocator, stmt, tests[i].expected_name, null);
     }
 }
 
@@ -255,14 +246,12 @@ test "return statement parser" {
         \\ return 69;
     ;
 
-    const l = try lexer.New(testing.allocator, input);
-    const p = try New(testing.allocator, l);
-    defer {
-        p.free();
-        testing.allocator.destroy(p);
-        testing.allocator.destroy(l);
-    }
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
     const program = p.parse_program();
     assert(p.error_count == 0);
 
@@ -284,9 +273,38 @@ fn test_return_statement(stmt: ast.Statement) !void {
     try testing.expectEqualStrings(stmt.return_statement.token_literal(), "return");
 }
 
-fn test_let_statement(stmt: ast.Statement, expected_name: []const u8) !void {
+fn test_let_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_name: []const u8, expected_value: ?[]const u8) !void {
     assert(@as(std.meta.Tag(ast.Statement), stmt) == .let_statement);
 
-    try testing.expectEqualStrings(stmt.let_statement.name.value, expected_name);
-    try testing.expectEqualStrings(stmt.let_statement.name.token_literal(), expected_name);
+    try testing.expectEqualStrings(expected_name, stmt.let_statement.name.value);
+    try testing.expectEqualStrings(expected_name, stmt.let_statement.name.token_literal(allocator));
+
+    if (expected_value) |v| {
+        try testing.expectEqualStrings(v, stmt.let_statement.value.token_literal(allocator));
+    }
+}
+
+test "prefix expression parsing" {
+    const input =
+        \\ let x = -5;
+        \\ let y = !5;
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = p.parse_program();
+    assert(p.error_count == 0);
+
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
+        .{ .expected_name = "x", .expected_value = "-5" },
+        .{ .expected_name = "y", .expected_value = "!5" },
+    };
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+    }
 }
