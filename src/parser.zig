@@ -7,10 +7,10 @@ const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-const infix_parse_fn = *const fn (p: *Parser, ast.Expression) ast.Expression;
+const infix_parse_fn = *const fn (p: *Parser, left: ast.Expression) ast.Expression;
 const prefix_parse_fn = *const fn (p: *Parser) ast.Expression;
 
-const operator_precedence = enum(u4) {
+const precedence = enum(u4) {
     lowest = 1,
     equals,
     less_greater,
@@ -132,14 +132,26 @@ const Parser = struct {
             return let_stmt;
         }
 
-        self.next_token();
-        let_stmt.value = self.parse_expression();
+        const p = self.cur_precedence();
+        let_stmt.value = self.parse_expression(p);
 
         return let_stmt;
     }
 
     fn register_prefix(self: *Parser, k: token.TokenType, v: prefix_parse_fn) !void {
         try self.prefix_parse_fns.put(k, v);
+    }
+
+    fn register_infix(self: *Parser, k: token.TokenType, v: infix_parse_fn) !void {
+        try self.infix_parse_fns.put(k, v);
+    }
+
+    fn cur_precedence(self: *Parser) precedence {
+        return precedence_look_up.get(self.cur_token.token_type) orelse precedence.lowest;
+    }
+
+    fn peek_precedence(self: *Parser) precedence {
+        return precedence_look_up.get(self.peek_token.token_type) orelse precedence.lowest;
     }
 
     fn parse_identifier(self: *Parser) ast.Expression {
@@ -166,29 +178,78 @@ const Parser = struct {
             .right = undefined,
         };
 
+        const p = self.cur_precedence();
         self.next_token();
-        prefix_expression.right = self.parse_expression();
+        prefix_expression.right = self.parse_expression(p);
 
         return ast.Expression{ .prefix_expression = prefix_expression };
     }
 
-    // Todo: precedence
-    fn parse_expression(self: *Parser) ast.Expression {
-        if (self.prefix_parse_fns.get(self.cur_token.token_type)) |prefix| {
-            return prefix(self);
+    fn parse_infix_expression(self: *Parser, left: ast.Expression) ast.Expression {
+        // Todo: handle this error
+        const infix_expression = self.allocator.create(ast.InfixExpression) catch unreachable;
+        infix_expression.* = ast.InfixExpression{
+            .token = self.cur_token,
+            .operator = self.cur_token.literal,
+            .left = left,
+            .right = undefined,
+        };
+
+        const p = self.cur_precedence();
+        self.next_token();
+        infix_expression.right = self.parse_expression(p);
+
+        return ast.Expression{ .infix_expression = infix_expression };
+    }
+
+    fn parse_expression(self: *Parser, p: precedence) ast.Expression {
+        // Todo: left if never called?
+        const prefix_fn = self.prefix_parse_fns.get(self.cur_token.token_type) orelse {
+            self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no prefix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
+            self.error_count += 1;
+
+            return ast.Expression{ .nil_expression = ast.NilExpression{ .token = token.Token{ .token_type = token.TokenType.Illegal, .literal = self.cur_token.literal } } };
+        };
+        var left_exp = prefix_fn(self);
+
+        // Todo:
+        // check if there is an operator after
+        // if yes => parse infix
+        // parse left
+        // operator ??
+        // parse right
+        while (!self.peek_token_is(token.TokenType.Semicolon) and @intFromEnum(p) < @intFromEnum(self.peek_precedence())) {
+            const infix = self.infix_parse_fns.get(self.cur_token.token_type) orelse {
+                self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no infix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
+                self.error_count += 1;
+
+                return ast.Expression{ .nil_expression = ast.NilExpression{ .token = token.Token{ .token_type = token.TokenType.Illegal, .literal = self.cur_token.literal } } };
+            };
+
+            self.next_token();
+            left_exp = infix(self, left_exp);
         }
 
-        self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no prefix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
-        self.error_count += 1;
-
-        return ast.Expression{ .nil_expression = ast.NilExpression{ .token = token.Token{ .token_type = token.TokenType.Illegal, .literal = self.cur_token.literal } } };
+        return left_exp;
     }
 };
 
+var precedence_look_up: std.AutoHashMap(token.TokenType, precedence) = undefined;
 // Todo:
 // 1. Test expressions with integers
 // 2. Test prefix expressions
 pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
+    // Todo: what about product & prefix?
+    precedence_look_up = std.AutoHashMap(token.TokenType, precedence).init(allocator);
+    try precedence_look_up.put(token.TokenType.Equal, precedence.equals);
+    try precedence_look_up.put(token.TokenType.NotEqual, precedence.equals);
+    try precedence_look_up.put(token.TokenType.Lt, precedence.less_greater);
+    try precedence_look_up.put(token.TokenType.Gt, precedence.less_greater);
+    try precedence_look_up.put(token.TokenType.Minus, precedence.sum);
+    try precedence_look_up.put(token.TokenType.Plus, precedence.sum);
+    try precedence_look_up.put(token.TokenType.Slash, precedence.product);
+    try precedence_look_up.put(token.TokenType.Asterix, precedence.product);
+
     var p = try allocator.create(Parser);
     p.* = Parser{
         .l = l,
@@ -205,6 +266,15 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try p.register_prefix(token.TokenType.Int, Parser.parse_integer);
     try p.register_prefix(token.TokenType.Bang, Parser.parse_prefix_expression);
     try p.register_prefix(token.TokenType.Minus, Parser.parse_prefix_expression);
+
+    try p.register_infix(token.TokenType.Plus, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Minus, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Lt, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Gt, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Asterix, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Slash, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Equal, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.NotEqual, Parser.parse_infix_expression);
 
     p.next_token();
     p.next_token();
@@ -302,6 +372,44 @@ test "prefix expression parsing" {
     const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
         .{ .expected_name = "x", .expected_value = "-5" },
         .{ .expected_name = "y", .expected_value = "!5" },
+    };
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+    }
+}
+
+test "infix expression parsing" {
+    const input =
+        \\ let a = 5 - 5;
+        \\ let b = 5 + 5;
+        \\ let c = 5 * 5;
+        \\ let d = 5 / 5;
+        \\ let e = 5 == 5;
+        \\ let f = 5 != 5;
+        \\ let g = 5 > 5;
+        \\ let h = 5 < 5;
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = p.parse_program();
+    // Todo: future me I've got a problem for you to fix.
+    assert(p.error_count == 0);
+
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
+        .{ .expected_name = "a", .expected_value = "5-5" },
+        .{ .expected_name = "b", .expected_value = "5+5" },
+        .{ .expected_name = "c", .expected_value = "5*5" },
+        .{ .expected_name = "d", .expected_value = "5/5" },
+        .{ .expected_name = "e", .expected_value = "5==5" },
+        .{ .expected_name = "f", .expected_value = "5!=5" },
+        .{ .expected_name = "g", .expected_value = "5>5" },
+        .{ .expected_name = "h", .expected_value = "5<5" },
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {

@@ -29,8 +29,9 @@ pub fn start() !void {
         std.debug.print("Unable to parse input, parser failed with error={any}\n", .{err});
         return;
     };
+    // Todo: when using arena allocator, this is not required
+    // refer to parser test allocations
     defer {
-        p.free();
         allocator.destroy(p);
         allocator.destroy(l);
     }

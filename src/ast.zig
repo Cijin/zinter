@@ -30,6 +30,7 @@ pub const Expression = union(enum) {
     identifier: Identifier,
     integer: Integer,
     prefix_expression: *PrefixExpression,
+    infix_expression: *InfixExpression,
     nil_expression: NilExpression,
 
     pub fn token_literal(self: Expression, allocator: mem.Allocator) []const u8 {
@@ -97,6 +98,23 @@ pub const PrefixExpression = struct {
         // Todo: handle or return error
         const prefix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.operator, self.right.token_literal(allocator) }) catch unreachable;
         return prefix_expression_literal;
+    }
+};
+
+pub const InfixExpression = struct {
+    token: token.Token,
+    operator: []const u8,
+    right: Expression,
+    left: Expression,
+
+    pub fn token_literal(self: InfixExpression, allocator: mem.Allocator) []const u8 {
+        // Todo: handle or return error
+        const infix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
+            self.left.token_literal(allocator),
+            self.operator,
+            self.right.token_literal(allocator),
+        }) catch unreachable;
+        return infix_expression_literal;
     }
 };
 
