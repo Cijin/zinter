@@ -131,6 +131,7 @@ const Parser = struct {
         if (!self.expect_peek(token.TokenType.Assign)) {
             return let_stmt;
         }
+        self.next_token();
 
         const p = self.cur_precedence();
         let_stmt.value = self.parse_expression(p);
@@ -203,7 +204,6 @@ const Parser = struct {
     }
 
     fn parse_expression(self: *Parser, p: precedence) ast.Expression {
-        // Todo: left if never called?
         const prefix_fn = self.prefix_parse_fns.get(self.cur_token.token_type) orelse {
             self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no prefix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
             self.error_count += 1;
@@ -212,14 +212,8 @@ const Parser = struct {
         };
         var left_exp = prefix_fn(self);
 
-        // Todo:
-        // check if there is an operator after
-        // if yes => parse infix
-        // parse left
-        // operator ??
-        // parse right
         while (!self.peek_token_is(token.TokenType.Semicolon) and @intFromEnum(p) < @intFromEnum(self.peek_precedence())) {
-            const infix = self.infix_parse_fns.get(self.cur_token.token_type) orelse {
+            const infix = self.infix_parse_fns.get(self.peek_token.token_type) orelse {
                 self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no infix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
                 self.error_count += 1;
 
@@ -399,6 +393,7 @@ test "infix expression parsing" {
     const p = try New(allocator, l);
     const program = p.parse_program();
     // Todo: future me I've got a problem for you to fix.
+    try testing.expectEqualStrings(p.errors[0], "");
     assert(p.error_count == 0);
 
     const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
