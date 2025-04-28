@@ -210,6 +210,8 @@ const Parser = struct {
         };
         var left_exp = prefix_fn(self);
 
+        // Todo: does the below statement get parsed as expected?
+        // 1 + 2 * 3
         while (!self.peek_token_is(token.TokenType.Semicolon) and @intFromEnum(p) < @intFromEnum(self.peek_precedence())) {
             const infix = self.infix_parse_fns.get(self.peek_token.token_type) orelse {
                 self.errors[self.error_count] = fmt.allocPrint(self.allocator, "no infix parse fn found for: {s}", .{self.cur_token.literal}) catch unreachable;
