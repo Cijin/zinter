@@ -96,17 +96,15 @@ const Parser = struct {
     }
 
     fn parse_return_statement(self: *Parser) ?ast.ReturnStatement {
-        const return_stmt = ast.ReturnStatement{
+        var return_stmt = ast.ReturnStatement{
             .token = self.cur_token,
             .return_value = undefined,
         };
 
         self.next_token();
 
-        // Todo: implement expression evaluation
-        while (!self.peek_token_is(token.TokenType.Semicolon)) {
-            self.next_token();
-        }
+        const p = self.cur_precedence();
+        return_stmt.return_value = self.parse_expression(p);
 
         return return_stmt;
     }
@@ -325,16 +323,16 @@ test "return statement parser" {
         .{ .expected_return_value = "69" },
     };
     assert(program.statements.len == tests.len);
-    for (program.statements) |stmt| {
-        try test_return_statement(stmt);
+    for (program.statements, 0..) |stmt, i| {
+        try test_return_statement(allocator, stmt, tests[i].expected_return_value);
     }
 }
 
-fn test_return_statement(stmt: ast.Statement) !void {
+fn test_return_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_return_value: []const u8) !void {
     assert(@as(std.meta.Tag(ast.Statement), stmt) == .return_statement);
 
-    // Todo: test return_value.
     try testing.expectEqualStrings(stmt.return_statement.token_literal(), "return");
+    try testing.expectEqualStrings(stmt.return_statement.return_value.token_literal(allocator), expected_return_value);
 }
 
 fn test_let_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_name: []const u8, expected_value: ?[]const u8) !void {
@@ -392,8 +390,6 @@ test "infix expression parsing" {
     const l = try lexer.New(allocator, input);
     const p = try New(allocator, l);
     const program = p.parse_program();
-    // Todo: future me I've got a problem for you to fix.
-    try testing.expectEqualStrings(p.errors[0], "");
     assert(p.error_count == 0);
 
     const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
