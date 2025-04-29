@@ -8,7 +8,6 @@ const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-// Todo: improve this after this assertion fails
 const MAX_STMTS_ARRAY_SIZE = 4096;
 const infix_parse_fn = *const fn (p: *Parser, left: ast.Expression) ParserError!ast.Expression;
 const prefix_parse_fn = *const fn (p: *Parser) ParserError!ast.Expression;
