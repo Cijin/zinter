@@ -95,7 +95,6 @@ pub const PrefixExpression = struct {
     right: Expression,
 
     pub fn token_literal(self: PrefixExpression, allocator: mem.Allocator) []const u8 {
-        // Todo: handle or return error
         const prefix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.operator, self.right.token_literal(allocator) }) catch unreachable;
         return prefix_expression_literal;
     }
@@ -108,7 +107,6 @@ pub const InfixExpression = struct {
     left: Expression,
 
     pub fn token_literal(self: InfixExpression, allocator: mem.Allocator) []const u8 {
-        // Todo: handle or return error
         const infix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
             self.left.token_literal(allocator),
             self.operator,
