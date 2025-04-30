@@ -29,6 +29,7 @@ pub const Statement = union(enum) {
 pub const Expression = union(enum) {
     identifier: Identifier,
     integer: Integer,
+    boolean: Boolean,
     prefix_expression: *PrefixExpression,
     infix_expression: *InfixExpression,
     nil_expression: NilExpression,
@@ -85,6 +86,15 @@ pub const Integer = struct {
     value: i64,
 
     pub fn token_literal(self: Integer, _: mem.Allocator) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const Boolean = struct {
+    token: token.Token,
+    value: bool,
+
+    pub fn token_literal(self: Boolean, _: mem.Allocator) []const u8 {
         return self.token.literal;
     }
 };

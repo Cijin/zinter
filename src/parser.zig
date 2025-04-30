@@ -163,6 +163,10 @@ const Parser = struct {
         return ast.Expression{ .integer = ast.Integer{ .token = self.cur_token, .value = parsed_int } };
     }
 
+    fn parse_boolean(self: *Parser) ParserError!ast.Expression {
+        return ast.Expression{ .boolean = ast.Boolean{ .token = self.cur_token, .value = mem.eql(u8, self.cur_token.literal, "true") } };
+    }
+
     fn parse_prefix_expression(self: *Parser) ParserError!ast.Expression {
         var prefix_expression = self.allocator.create(ast.PrefixExpression) catch unreachable;
         prefix_expression.* = ast.PrefixExpression{
@@ -243,6 +247,8 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
 
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
     try p.register_prefix(token.TokenType.Int, Parser.parse_integer);
+    try p.register_prefix(token.TokenType.True, Parser.parse_boolean);
+    try p.register_prefix(token.TokenType.False, Parser.parse_boolean);
     try p.register_prefix(token.TokenType.Bang, Parser.parse_prefix_expression);
     try p.register_prefix(token.TokenType.Minus, Parser.parse_prefix_expression);
 
@@ -384,6 +390,30 @@ test "infix expression parsing" {
         .{ .expected_name = "f", .expected_value = "5!=5" },
         .{ .expected_name = "g", .expected_value = "5>5" },
         .{ .expected_name = "h", .expected_value = "5<5" },
+    };
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+    }
+}
+
+test "boolean expression parsing" {
+    const input =
+        \\ let a = true;
+        \\ let b = false;
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
+        .{ .expected_name = "a", .expected_value = "true" },
+        .{ .expected_name = "b", .expected_value = "false" },
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
