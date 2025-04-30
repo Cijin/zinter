@@ -164,7 +164,7 @@ const Parser = struct {
     }
 
     fn parse_boolean(self: *Parser) ParserError!ast.Expression {
-        return ast.Expression{ .boolean = ast.Boolean{ .token = self.cur_token, .value = mem.eql(u8, self.cur_token.literal, "true") } };
+        return ast.Expression{ .boolean = ast.Boolean{ .token = self.cur_token, .value = self.cur_token.token_type == token.TokenType.True } };
     }
 
     fn parse_prefix_expression(self: *Parser) ParserError!ast.Expression {
@@ -363,7 +363,7 @@ test "prefix expression parsing" {
 
 test "infix expression parsing" {
     const input =
-        \\ let a = 5 - 5;
+        \\ let a = 5 - 6;
         \\ let b = 5 + 5;
         \\ let c = 5 * 5;
         \\ let d = 5 / 5;
@@ -381,26 +381,35 @@ test "infix expression parsing" {
     const p = try New(allocator, l);
     const program = try p.parse_program();
 
-    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
-        .{ .expected_name = "a", .expected_value = "5-5" },
-        .{ .expected_name = "b", .expected_value = "5+5" },
-        .{ .expected_name = "c", .expected_value = "5*5" },
-        .{ .expected_name = "d", .expected_value = "5/5" },
-        .{ .expected_name = "e", .expected_value = "5==5" },
-        .{ .expected_name = "f", .expected_value = "5!=5" },
-        .{ .expected_name = "g", .expected_value = "5>5" },
-        .{ .expected_name = "h", .expected_value = "5<5" },
+    const tests = [_]struct {
+        expected_name: []const u8,
+        expected_value: []const u8,
+        expected_left: i64,
+        expected_operator: []const u8,
+        expected_right: i64,
+    }{
+        .{ .expected_name = "a", .expected_value = "5-6", .expected_left = 5, .expected_operator = "-", .expected_right = 6 },
+        .{ .expected_name = "b", .expected_value = "5+5", .expected_left = 5, .expected_operator = "+", .expected_right = 5 },
+        .{ .expected_name = "c", .expected_value = "5*5", .expected_left = 5, .expected_operator = "*", .expected_right = 5 },
+        .{ .expected_name = "d", .expected_value = "5/5", .expected_left = 5, .expected_operator = "/", .expected_right = 5 },
+        .{ .expected_name = "e", .expected_value = "5==5", .expected_left = 5, .expected_operator = "==", .expected_right = 5 },
+        .{ .expected_name = "f", .expected_value = "5!=5", .expected_left = 5, .expected_operator = "!=", .expected_right = 5 },
+        .{ .expected_name = "g", .expected_value = "5>5", .expected_left = 5, .expected_operator = ">", .expected_right = 5 },
+        .{ .expected_name = "h", .expected_value = "5<5", .expected_left = 5, .expected_operator = "<", .expected_right = 5 },
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+
+        const infix_expression: *ast.InfixExpression = stmt.let_statement.value.infix_expression;
+        try test_infix(i64, infix_expression, tests[i].expected_left, tests[i].expected_operator, tests[i].expected_right);
     }
 }
 
 test "boolean expression parsing" {
     const input =
-        \\ let a = true;
-        \\ let b = false;
+        \\ let a = !true;
+        \\ let b = !false;
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -411,12 +420,26 @@ test "boolean expression parsing" {
     const p = try New(allocator, l);
     const program = try p.parse_program();
 
-    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
-        .{ .expected_name = "a", .expected_value = "true" },
-        .{ .expected_name = "b", .expected_value = "false" },
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8, expected_boolean: bool }{
+        .{ .expected_name = "a", .expected_value = "!true", .expected_boolean = true },
+        .{ .expected_name = "b", .expected_value = "!false", .expected_boolean = false },
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+
+        const prefix_expression: *ast.PrefixExpression = stmt.let_statement.value.prefix_expression;
+        try test_prefix(bool, prefix_expression, "!", tests[i].expected_boolean);
     }
+}
+
+fn test_infix(comptime T: type, infix_expression: *ast.InfixExpression, left: T, operator: []const u8, right: T) !void {
+    try testing.expectEqual(infix_expression.left.integer.value, left);
+    try testing.expectEqual(infix_expression.operator, operator);
+    try testing.expectEqual(infix_expression.right.integer.value, right);
+}
+
+fn test_prefix(comptime T: type, prefix_expression: *ast.PrefixExpression, prefix: []const u8, right: T) !void {
+    try testing.expectEqual(prefix_expression.operator, prefix);
+    try testing.expectEqual(prefix_expression.right.boolean.value, right);
 }
