@@ -18,6 +18,7 @@ pub const Node = union(enum) {
 pub const Statement = union(enum) {
     let_statement: LetStatement,
     return_statement: ReturnStatement,
+    block_statement: BlockStatement,
 
     pub fn token_literal(self: Statement) []const u8 {
         switch (self) {
@@ -32,6 +33,7 @@ pub const Expression = union(enum) {
     boolean: Boolean,
     prefix_expression: *PrefixExpression,
     infix_expression: *InfixExpression,
+    if_expression: *IfExpression,
     nil_expression: NilExpression,
 
     pub fn token_literal(self: Expression, allocator: mem.Allocator) []const u8 {
@@ -68,6 +70,15 @@ pub const ReturnStatement = struct {
     return_value: Expression,
 
     pub fn token_literal(self: ReturnStatement) []const u8 {
+        return self.token.literal;
+    }
+};
+
+pub const BlockStatement = struct {
+    token: token.Token,
+    statements: []Statement,
+
+    pub fn token_literal(self: BlockStatement) []const u8 {
         return self.token.literal;
     }
 };
@@ -123,6 +134,17 @@ pub const InfixExpression = struct {
             self.right.token_literal(allocator),
         }) catch unreachable;
         return infix_expression_literal;
+    }
+};
+
+pub const IfExpression = struct {
+    token: token.Token,
+    condition: Expression,
+    consequence: BlockStatement,
+    alternative: BlockStatement,
+
+    pub fn token_literal(self: IfExpression, _: mem.Allocator) []const u8 {
+        return self.token.literal;
     }
 };
 

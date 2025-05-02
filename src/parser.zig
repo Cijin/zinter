@@ -9,6 +9,7 @@ const testing = std.testing;
 const assert = std.debug.assert;
 
 const MAX_STMTS_ARRAY_SIZE = 4096;
+const MAX_BLOCK_ARRAY_SIZE = 32;
 const infix_parse_fn = *const fn (p: *Parser, left: ast.Expression) ParserError!ast.Expression;
 const prefix_parse_fn = *const fn (p: *Parser) ParserError!ast.Expression;
 
@@ -28,6 +29,7 @@ const ParserError = error{
     UnexpectedInfixOperator,
     ParseIntError,
     OutOfMemory,
+    MissingClosingParen,
 };
 
 const Parser = struct {
@@ -61,7 +63,7 @@ const Parser = struct {
 
     pub fn parse_program(self: *Parser) ParserError!ast.Program {
         var stmts: [MAX_STMTS_ARRAY_SIZE]ast.Statement = undefined;
-        var idx: usize = 0;
+        var idx: u64 = 0;
         while (self.cur_token.token_type != token.TokenType.Eof) {
             assert(idx < self.l.input.len);
             assert(idx < MAX_STMTS_ARRAY_SIZE);
@@ -167,6 +169,62 @@ const Parser = struct {
         return ast.Expression{ .boolean = ast.Boolean{ .token = self.cur_token, .value = self.cur_token.token_type == token.TokenType.True } };
     }
 
+    // Todo: test this at some point
+    fn parse_grouped_expression(self: *Parser) ParserError!ast.Expression {
+        self.next_token();
+
+        const expression = try self.parse_expression(precedence.lowest);
+        if (!self.peek_token_is(token.TokenType.Rparen)) {
+            return ParserError.MissingClosingParen;
+        }
+
+        return expression;
+    }
+
+    fn parse_if_expression(self: *Parser) ParserError!ast.Expression {
+        var if_expression = ast.IfExpression{
+            .token = self.cur_token,
+            .condition = undefined,
+            .consequence = undefined,
+            .alternative = undefined,
+        };
+
+        self.next_token();
+
+        try self.expect_peek(token.TokenType.Lparen);
+        if_expression.condition = try self.parse_expression(precedence.lowest);
+
+        try self.expect_peek(token.TokenType.Lbrace);
+        if_expression.consequence = try self.parse_expression(precedence.lowest);
+
+        if (self.peek_token_is(token.TokenType.Else)) {
+            self.next_token();
+            if_expression.alternative = try self.parse_expression(precedence.lowest);
+        }
+
+        return ast.Expression{ .if_expression = if_expression };
+    }
+
+    fn parse_block_statements(self: *Parser) ParserError!ast.BlockStatement {
+        var block_statement = ast.BlockStatement{
+            .token = self.cur_token,
+            .statements = undefined,
+        };
+
+        var i: u64 = 0;
+        var stmts: [MAX_BLOCK_ARRAY_SIZE]ast.Statement = undefined;
+        while (!self.peek_token_is(token.TokenType.Rbrace)) {
+            const stmt = try self.parse_statement();
+            if (stmt) |s| {
+                stmts[i] = s;
+                i += 1;
+            }
+        }
+
+        block_statement.statements = stmts[0..i];
+        return block_statement;
+    }
+
     fn parse_prefix_expression(self: *Parser) ParserError!ast.Expression {
         var prefix_expression = self.allocator.create(ast.PrefixExpression) catch unreachable;
         prefix_expression.* = ast.PrefixExpression{
@@ -245,6 +303,9 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
         .infix_parse_fns = std.AutoHashMap(token.TokenType, infix_parse_fn).init(allocator),
     };
 
+    try p.register_prefix(token.TokenType.Lbrace, Parser.parse_block_statements);
+    try p.register_prefix(token.TokenType.If, Parser.parse_if_expression);
+    try p.register_prefix(token.TokenType.Lparen, Parser.parse_grouped_expression);
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
     try p.register_prefix(token.TokenType.Int, Parser.parse_integer);
     try p.register_prefix(token.TokenType.True, Parser.parse_boolean);
@@ -335,6 +396,17 @@ fn test_let_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_na
     if (expected_value) |v| {
         try testing.expectEqualStrings(v, stmt.let_statement.value.token_literal(allocator));
     }
+}
+
+fn test_infix(comptime T: type, infix_expression: *ast.InfixExpression, left: T, operator: []const u8, right: T) !void {
+    try testing.expectEqual(infix_expression.left.integer.value, left);
+    try testing.expectEqual(infix_expression.operator, operator);
+    try testing.expectEqual(infix_expression.right.integer.value, right);
+}
+
+fn test_prefix(comptime T: type, prefix_expression: *ast.PrefixExpression, prefix: []const u8, right: T) !void {
+    try testing.expectEqual(prefix_expression.operator, prefix);
+    try testing.expectEqual(prefix_expression.right.boolean.value, right);
 }
 
 test "prefix expression parsing" {
@@ -433,13 +505,34 @@ test "boolean expression parsing" {
     }
 }
 
-fn test_infix(comptime T: type, infix_expression: *ast.InfixExpression, left: T, operator: []const u8, right: T) !void {
-    try testing.expectEqual(infix_expression.left.integer.value, left);
-    try testing.expectEqual(infix_expression.operator, operator);
-    try testing.expectEqual(infix_expression.right.integer.value, right);
+// Todo: fix test and code
+test "if expression parsing" {
+    const input =
+        \\ let z = if (x > y) { return x; } else { return y; };
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8, expected_condition: []const u8, expected_consequence: []const u8, expected_alternative: []const u8 }{
+        .{ .expected_name = "z", .expected_value = "if (x > y) { return x; } else { return y; }", .expected_condition = "x>y", .expected_consequence = "return x", .expected_alternative = "return y" },
+    };
+
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+
+        const if_expression: *ast.IfExpression = stmt.let_statement.value.if_expression;
+        try test_if_expression(if_expression, tests[i].expected_condition, tests[i].expected_consequence, tests[i].expected_alternative);
+    }
 }
 
-fn test_prefix(comptime T: type, prefix_expression: *ast.PrefixExpression, prefix: []const u8, right: T) !void {
-    try testing.expectEqual(prefix_expression.operator, prefix);
-    try testing.expectEqual(prefix_expression.right.boolean.value, right);
+fn test_if_expression(expr: ast.IfExpression, condition: []const u8, consequence: []const u8, alternative: []const u8) !void {
+    try testing.expectEqualString(expr.condition.token_literal(), condition);
+    try testing.expectEqualString(expr.consequence.token_literal(), consequence);
+    try testing.expectEqualString(expr.alternative.token_literal(), alternative);
 }
