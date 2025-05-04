@@ -20,9 +20,9 @@ pub const Statement = union(enum) {
     return_statement: ReturnStatement,
     block_statement: BlockStatement,
 
-    pub fn token_literal(self: Statement) []const u8 {
+    pub fn token_literal(self: Statement, allocator: mem.Allocator) []const u8 {
         switch (self) {
-            inline else => |impl| return impl.token_literal(),
+            inline else => |impl| return impl.token_literal(allocator),
         }
     }
 };
@@ -46,9 +46,9 @@ pub const Expression = union(enum) {
 pub const Program = struct {
     statements: []const Statement,
 
-    pub fn token_literal(self: Program) []const u8 {
+    pub fn token_literal(self: Program, allocator: mem.Allocator) []const u8 {
         if (self.statements.len > 0) {
-            return self.statements[0].token_literal();
+            return self.statements[0].token_literal(allocator);
         }
 
         return "";
@@ -60,8 +60,12 @@ pub const LetStatement = struct {
     name: Identifier,
     value: Expression,
 
-    pub fn token_literal(self: LetStatement) []const u8 {
-        return self.token.literal;
+    pub fn token_literal(self: LetStatement, allocator: mem.Allocator) []const u8 {
+        return std.fmt.allocPrint(allocator, "{s} {s} {s}", .{
+            self.token.literal,
+            self.name.token_literal(allocator),
+            self.value.token_literal(allocator),
+        }) catch unreachable;
     }
 };
 
@@ -69,8 +73,11 @@ pub const ReturnStatement = struct {
     token: token.Token,
     return_value: Expression,
 
-    pub fn token_literal(self: ReturnStatement) []const u8 {
-        return self.token.literal;
+    pub fn token_literal(self: ReturnStatement, allocator: mem.Allocator) []const u8 {
+        return std.fmt.allocPrint(allocator, "{s} {s}", .{
+            self.token.literal,
+            self.return_value.token_literal(allocator),
+        }) catch unreachable;
     }
 };
 
@@ -78,8 +85,14 @@ pub const BlockStatement = struct {
     token: token.Token,
     statements: []Statement,
 
-    pub fn token_literal(self: BlockStatement) []const u8 {
-        return self.token.literal;
+    pub fn token_literal(self: BlockStatement, allocator: mem.Allocator) []const u8 {
+        var block_statement_literal: []u8 = "";
+        for (self.statements) |stmt| {
+            // Todo: print multiple lines prettier? \n maybe
+            block_statement_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ block_statement_literal, stmt.token_literal(allocator) }) catch unreachable;
+        }
+
+        return block_statement_literal;
     }
 };
 
@@ -116,7 +129,10 @@ pub const PrefixExpression = struct {
     right: Expression,
 
     pub fn token_literal(self: PrefixExpression, allocator: mem.Allocator) []const u8 {
-        const prefix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.operator, self.right.token_literal(allocator) }) catch unreachable;
+        const prefix_expression_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{
+            self.operator,
+            self.right.token_literal(allocator),
+        }) catch unreachable;
         return prefix_expression_literal;
     }
 };
@@ -141,10 +157,21 @@ pub const IfExpression = struct {
     token: token.Token,
     condition: Expression,
     consequence: BlockStatement,
-    alternative: BlockStatement,
+    alternative: ?BlockStatement,
 
-    pub fn token_literal(self: IfExpression, _: mem.Allocator) []const u8 {
-        return self.token.literal;
+    pub fn token_literal(self: IfExpression, allocator: mem.Allocator) []const u8 {
+        var if_expression_literal = std.fmt.allocPrint(allocator, "{s}({s}){{{s}}}", .{
+            self.token.literal,
+            self.condition.token_literal(allocator),
+            self.consequence.token_literal(allocator),
+        }) catch unreachable;
+        if (self.alternative) |stmt| {
+            if_expression_literal = std.fmt.allocPrint(allocator, "{s}else{{{s}}}", .{
+                if_expression_literal,
+                stmt.token_literal(allocator),
+            }) catch unreachable;
+        }
+        return if_expression_literal;
     }
 };
 

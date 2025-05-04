@@ -51,6 +51,10 @@ const Parser = struct {
         return self.peek_token.token_type == expected;
     }
 
+    fn cur_token_is(self: *Parser, expected: token.TokenType) bool {
+        return self.cur_token.token_type == expected;
+    }
+
     fn expect_peek(self: *Parser, expected: token.TokenType) ParserError!void {
         if (self.peek_token_is(expected)) {
             self.next_token();
@@ -89,17 +93,13 @@ const Parser = struct {
             },
             token.TokenType.Return => {
                 const return_stmt = try self.parse_return_statement();
-                if (return_stmt) |stmt| {
-                    return ast.Statement{ .return_statement = stmt };
-                }
-
-                return null;
+                return ast.Statement{ .return_statement = return_stmt };
             },
             else => return null,
         }
     }
 
-    fn parse_return_statement(self: *Parser) ParserError!?ast.ReturnStatement {
+    fn parse_return_statement(self: *Parser) ParserError!ast.ReturnStatement {
         var return_stmt = ast.ReturnStatement{
             .token = self.cur_token,
             .return_value = undefined,
@@ -182,24 +182,28 @@ const Parser = struct {
     }
 
     fn parse_if_expression(self: *Parser) ParserError!ast.Expression {
-        var if_expression = ast.IfExpression{
+        var if_expression = self.allocator.create(ast.IfExpression) catch unreachable;
+        if_expression.* = ast.IfExpression{
             .token = self.cur_token,
             .condition = undefined,
             .consequence = undefined,
-            .alternative = undefined,
+            .alternative = null,
         };
 
+        try self.expect_peek(token.TokenType.Lparen);
         self.next_token();
 
-        try self.expect_peek(token.TokenType.Lparen);
         if_expression.condition = try self.parse_expression(precedence.lowest);
 
+        try self.expect_peek(token.TokenType.Rparen);
         try self.expect_peek(token.TokenType.Lbrace);
-        if_expression.consequence = try self.parse_expression(precedence.lowest);
+        if_expression.consequence = try self.parse_block_statements();
 
         if (self.peek_token_is(token.TokenType.Else)) {
             self.next_token();
-            if_expression.alternative = try self.parse_expression(precedence.lowest);
+            try self.expect_peek(token.TokenType.Lbrace);
+
+            if_expression.alternative = try self.parse_block_statements();
         }
 
         return ast.Expression{ .if_expression = if_expression };
@@ -211,17 +215,18 @@ const Parser = struct {
             .statements = undefined,
         };
 
-        var i: u64 = 0;
-        var stmts: [MAX_BLOCK_ARRAY_SIZE]ast.Statement = undefined;
-        while (!self.peek_token_is(token.TokenType.Rbrace)) {
+        self.next_token();
+
+        var stmts = std.ArrayList(ast.Statement).init(self.allocator);
+        while (!self.cur_token_is(token.TokenType.Rbrace) and !self.cur_token_is(token.TokenType.Eof)) {
             const stmt = try self.parse_statement();
             if (stmt) |s| {
-                stmts[i] = s;
-                i += 1;
+                stmts.append(s) catch unreachable;
             }
+            self.next_token();
         }
 
-        block_statement.statements = stmts[0..i];
+        block_statement.statements = stmts.items;
         return block_statement;
     }
 
@@ -303,7 +308,6 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
         .infix_parse_fns = std.AutoHashMap(token.TokenType, infix_parse_fn).init(allocator),
     };
 
-    try p.register_prefix(token.TokenType.Lbrace, Parser.parse_block_statements);
     try p.register_prefix(token.TokenType.If, Parser.parse_if_expression);
     try p.register_prefix(token.TokenType.Lparen, Parser.parse_grouped_expression);
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
@@ -369,22 +373,22 @@ test "return statement parser" {
     const p = try New(allocator, l);
     const program = try p.parse_program();
 
-    const tests = [_]struct { expected_return_value: []const u8 }{
-        .{ .expected_return_value = "5" },
-        .{ .expected_return_value = "10" },
-        .{ .expected_return_value = "69" },
+    const tests = [_]struct { expected_return_stmt: []const u8, expected_return_value: []const u8 }{
+        .{ .expected_return_stmt = "return 5", .expected_return_value = "5" },
+        .{ .expected_return_stmt = "return 10", .expected_return_value = "10" },
+        .{ .expected_return_stmt = "return 69", .expected_return_value = "69" },
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
-        try test_return_statement(allocator, stmt, tests[i].expected_return_value);
+        try test_return_statement(allocator, stmt, tests[i].expected_return_stmt, tests[i].expected_return_value);
     }
 }
 
-fn test_return_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_return_value: []const u8) !void {
+fn test_return_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_return_stmt: []const u8, expected_return_value: []const u8) !void {
     assert(@as(std.meta.Tag(ast.Statement), stmt) == .return_statement);
 
-    try testing.expectEqualStrings(stmt.return_statement.token_literal(), "return");
-    try testing.expectEqualStrings(stmt.return_statement.return_value.token_literal(allocator), expected_return_value);
+    try testing.expectEqualStrings(expected_return_stmt, stmt.return_statement.token_literal(allocator));
+    try testing.expectEqualStrings(expected_return_value, stmt.return_statement.return_value.token_literal(allocator));
 }
 
 fn test_let_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_name: []const u8, expected_value: ?[]const u8) !void {
@@ -505,10 +509,10 @@ test "boolean expression parsing" {
     }
 }
 
-// Todo: fix test and code
 test "if expression parsing" {
     const input =
-        \\ let z = if (x > y) { return x; } else { return y; };
+        \\ let z = if (x > y) { return x; };
+        \\ let a = if (b > c) { return c; } else { return b; };
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -520,19 +524,23 @@ test "if expression parsing" {
     const program = try p.parse_program();
 
     const tests = [_]struct { expected_name: []const u8, expected_value: []const u8, expected_condition: []const u8, expected_consequence: []const u8, expected_alternative: []const u8 }{
-        .{ .expected_name = "z", .expected_value = "if (x > y) { return x; } else { return y; }", .expected_condition = "x>y", .expected_consequence = "return x", .expected_alternative = "return y" },
+        .{ .expected_name = "z", .expected_value = "if(x>y){return x}", .expected_condition = "x>y", .expected_consequence = "return x", .expected_alternative = "" },
+        .{ .expected_name = "a", .expected_value = "if(b>c){return c}else{return b}", .expected_condition = "b>c", .expected_consequence = "return c", .expected_alternative = "return b" },
     };
 
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
 
         const if_expression: *ast.IfExpression = stmt.let_statement.value.if_expression;
-        try test_if_expression(if_expression, tests[i].expected_condition, tests[i].expected_consequence, tests[i].expected_alternative);
+        try test_if_expression(allocator, if_expression, tests[i].expected_condition, tests[i].expected_consequence, tests[i].expected_alternative);
     }
 }
 
-fn test_if_expression(expr: ast.IfExpression, condition: []const u8, consequence: []const u8, alternative: []const u8) !void {
-    try testing.expectEqualString(expr.condition.token_literal(), condition);
-    try testing.expectEqualString(expr.consequence.token_literal(), consequence);
-    try testing.expectEqualString(expr.alternative.token_literal(), alternative);
+fn test_if_expression(allocator: mem.Allocator, expr: *ast.IfExpression, condition: []const u8, consequence: []const u8, alternative: []const u8) !void {
+    try testing.expectEqualStrings(expr.condition.token_literal(allocator), condition);
+    try testing.expectEqualStrings(expr.consequence.token_literal(allocator), consequence);
+    if (!mem.eql(u8, alternative, "")) {
+        try testing.expect(@typeInfo(@TypeOf(expr.alternative)).optional.child == ast.BlockStatement);
+        try testing.expectEqualStrings(expr.alternative.?.token_literal(allocator), alternative);
+    }
 }
