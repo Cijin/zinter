@@ -8,8 +8,6 @@ const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-const MAX_STMTS_ARRAY_SIZE = 4096;
-const MAX_BLOCK_ARRAY_SIZE = 32;
 const infix_parse_fn = *const fn (p: *Parser, left: ast.Expression) ParserError!ast.Expression;
 const prefix_parse_fn = *const fn (p: *Parser) ParserError!ast.Expression;
 
@@ -66,23 +64,19 @@ const Parser = struct {
     }
 
     pub fn parse_program(self: *Parser) ParserError!ast.Program {
-        var stmts: [MAX_STMTS_ARRAY_SIZE]ast.Statement = undefined;
-        var idx: u64 = 0;
+        var stmts = std.ArrayList(ast.Statement).init(self.allocator);
         while (self.cur_token.token_type != token.TokenType.Eof) {
-            assert(idx < self.l.input.len);
-            assert(idx < MAX_STMTS_ARRAY_SIZE);
+            // Todo: verify if this is correct
+            assert(stmts.items.len < self.l.input.len);
 
             const stmt = try self.parse_statement();
             if (stmt) |s| {
-                stmts[idx] = s;
-                idx += 1;
+                stmts.append(s) catch unreachable;
             }
             self.next_token();
         }
 
-        return ast.Program{
-            .statements = stmts[0..idx],
-        };
+        return ast.Program{ .statements = stmts.items };
     }
 
     fn parse_statement(self: *Parser) ParserError!?ast.Statement {
