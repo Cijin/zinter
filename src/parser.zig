@@ -211,7 +211,6 @@ const Parser = struct {
         try self.expect_peek(token.TokenType.Ident);
         identifiers.append(ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal }) catch unreachable;
 
-        // Todo:
         while (self.peek_token_is(token.TokenType.Comma)) {
             self.next_token();
             self.next_token();
@@ -342,9 +341,6 @@ const Parser = struct {
         };
         var left_exp = try prefix_fn(self);
 
-        // Todo: does the below statement get parsed as expected?
-        // 1 + 2 * 3
-        // Todo: not bound
         while (!self.peek_token_is(token.TokenType.Semicolon) and @intFromEnum(p) < @intFromEnum(self.peek_precedence())) {
             const infix = self.infix_parse_fns.get(self.peek_token.token_type) orelse {
                 print("no infix parse fn found for: {s}", .{self.cur_token.literal});
