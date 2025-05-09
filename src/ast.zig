@@ -34,6 +34,8 @@ pub const Expression = union(enum) {
     prefix_expression: *PrefixExpression,
     infix_expression: *InfixExpression,
     if_expression: *IfExpression,
+    fn_literal: FnLiteral,
+    call_expression: *CallExpression,
     nil_expression: NilExpression,
 
     pub fn token_literal(self: Expression, allocator: mem.Allocator) []const u8 {
@@ -61,7 +63,7 @@ pub const LetStatement = struct {
     value: Expression,
 
     pub fn token_literal(self: LetStatement, allocator: mem.Allocator) []const u8 {
-        return std.fmt.allocPrint(allocator, "{s} {s} {s}", .{
+        return std.fmt.allocPrint(allocator, "{s} = {s} {s}", .{
             self.token.literal,
             self.name.token_literal(allocator),
             self.value.token_literal(allocator),
@@ -172,6 +174,45 @@ pub const IfExpression = struct {
             }) catch unreachable;
         }
         return if_expression_literal;
+    }
+};
+
+pub const FnLiteral = struct {
+    token: token.Token,
+    parameters: []Identifier,
+    body: BlockStatement,
+
+    pub fn token_literal(self: FnLiteral, allocator: mem.Allocator) []const u8 {
+        var fn_literal = std.fmt.allocPrint(allocator, "{s}(", .{self.token.literal}) catch unreachable;
+        for (self.parameters, 0..) |p, i| {
+            if (i + 1 == self.parameters.len) {
+                fn_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ fn_literal, p.token_literal(allocator) }) catch unreachable;
+                continue;
+            }
+            fn_literal = std.fmt.allocPrint(allocator, "{s}{s}, ", .{ fn_literal, p.token_literal(allocator) }) catch unreachable;
+        }
+        fn_literal = std.fmt.allocPrint(allocator, "{s}){{{s}}}", .{ fn_literal, self.body.token_literal(allocator) }) catch unreachable;
+
+        return fn_literal;
+    }
+};
+
+pub const CallExpression = struct {
+    token: token.Token,
+    function: Identifier,
+    arguments: []Expression,
+
+    pub fn token_literal(self: CallExpression, allocator: mem.Allocator) []const u8 {
+        var call_expression = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.function.token_literal(allocator), self.token.literal }) catch unreachable;
+        for (self.arguments, 0..) |e, i| {
+            if (i + 1 == self.arguments.len) {
+                call_expression = std.fmt.allocPrint(allocator, "{s}{s})", .{ call_expression, e.token_literal(allocator) }) catch unreachable;
+                continue;
+            }
+            call_expression = std.fmt.allocPrint(allocator, "{s}{s},", .{ call_expression, e.token_literal(allocator) }) catch unreachable;
+        }
+
+        return call_expression;
     }
 };
 

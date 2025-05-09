@@ -18,9 +18,10 @@ pub fn start() !void {
     var buffer: [1024]u8 = undefined;
     const result = try stdin.readUntilDelimiter(&buffer, '\n');
 
-    var program_buffer: [4096]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&program_buffer);
-    const allocator = fba.allocator();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const l = lexer.New(allocator, result) catch |err| {
         std.debug.print("Unable to parse input, lexer failed with error={any}\n", .{err});
         return;
@@ -29,16 +30,13 @@ pub fn start() !void {
         std.debug.print("Unable to parse input, parser failed with error={any}\n", .{err});
         return;
     };
-    // Todo: when using arena allocator, this is not required
-    // refer to parser test allocations
-    defer {
-        allocator.destroy(p);
-        allocator.destroy(l);
-    }
 
-    const program = p.parse_program();
+    const program = p.parse_program() catch |err| {
+        std.debug.print("Unable to parse program, parser failed with error={any}\n", .{err});
+        return;
+    };
     for (program.statements) |stmt| {
-        try stdout.print("{s}\n", .{stmt.token_literal()});
+        try stdout.print("{s}\n", .{stmt.token_literal(allocator)});
     }
 
     try bw.flush();

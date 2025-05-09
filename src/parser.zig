@@ -66,7 +66,6 @@ const Parser = struct {
     pub fn parse_program(self: *Parser) ParserError!ast.Program {
         var stmts = std.ArrayList(ast.Statement).init(self.allocator);
         while (self.cur_token.token_type != token.TokenType.Eof) {
-            // Todo: verify if this is correct
             assert(stmts.items.len < self.l.input.len);
 
             const stmt = try self.parse_statement();
@@ -163,7 +162,6 @@ const Parser = struct {
         return ast.Expression{ .boolean = ast.Boolean{ .token = self.cur_token, .value = self.cur_token.token_type == token.TokenType.True } };
     }
 
-    // Todo: test this at some point
     fn parse_grouped_expression(self: *Parser) ParserError!ast.Expression {
         self.next_token();
 
@@ -203,6 +201,45 @@ const Parser = struct {
         return ast.Expression{ .if_expression = if_expression };
     }
 
+    fn parse_fn_parameters(self: *Parser) ParserError![]ast.Identifier {
+        var identifiers = std.ArrayList(ast.Identifier).init(self.allocator);
+        if (self.peek_token_is(token.TokenType.Rparen)) {
+            self.next_token();
+            return identifiers.items;
+        }
+
+        try self.expect_peek(token.TokenType.Ident);
+        identifiers.append(ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal }) catch unreachable;
+
+        // Todo:
+        while (self.peek_token_is(token.TokenType.Comma)) {
+            self.next_token();
+            self.next_token();
+
+            identifiers.append(ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal }) catch unreachable;
+        }
+
+        try self.expect_peek(token.TokenType.Rparen);
+
+        return identifiers.items;
+    }
+
+    fn parse_fn_literal(self: *Parser) ParserError!ast.Expression {
+        var fn_literal = ast.FnLiteral{
+            .token = self.cur_token,
+            .parameters = undefined,
+            .body = undefined,
+        };
+
+        try self.expect_peek(token.TokenType.Lparen);
+        fn_literal.parameters = try self.parse_fn_parameters();
+
+        try self.expect_peek(token.TokenType.Lbrace);
+        fn_literal.body = try self.parse_block_statements();
+
+        return ast.Expression{ .fn_literal = fn_literal };
+    }
+
     fn parse_block_statements(self: *Parser) ParserError!ast.BlockStatement {
         var block_statement = ast.BlockStatement{
             .token = self.cur_token,
@@ -239,6 +276,46 @@ const Parser = struct {
         return ast.Expression{ .prefix_expression = prefix_expression };
     }
 
+    fn parse_call_expression(self: *Parser, left: ast.Expression) ParserError!ast.Expression {
+        const call_expression = self.allocator.create(ast.CallExpression) catch {
+            return ParserError.OutOfMemory;
+        };
+
+        const identifier: ast.Identifier = left.identifier;
+        call_expression.* = ast.CallExpression{
+            .token = self.cur_token,
+            .function = identifier,
+            .arguments = undefined,
+        };
+
+        const args = try self.parse_arguments();
+        call_expression.arguments = args;
+
+        return ast.Expression{ .call_expression = call_expression };
+    }
+
+    fn parse_arguments(self: *Parser) ParserError![]ast.Expression {
+        var args = std.ArrayList(ast.Expression).init(self.allocator);
+        if (self.peek_token_is(token.TokenType.Rparen)) {
+            self.next_token();
+            return args.items;
+        }
+
+        self.next_token();
+        var arg = try self.parse_expression(precedence.lowest);
+        args.append(arg) catch unreachable;
+
+        while (self.peek_token_is(token.TokenType.Comma)) {
+            self.next_token();
+            self.next_token();
+            arg = try self.parse_expression(precedence.lowest);
+            args.append(arg) catch unreachable;
+        }
+
+        try self.expect_peek(token.TokenType.Rparen);
+        return args.items;
+    }
+
     fn parse_infix_expression(self: *Parser, left: ast.Expression) ParserError!ast.Expression {
         const infix_expression = self.allocator.create(ast.InfixExpression) catch {
             return ParserError.OutOfMemory;
@@ -257,6 +334,7 @@ const Parser = struct {
         return ast.Expression{ .infix_expression = infix_expression };
     }
 
+    // Todo: currently statements like this one: add(x, y); are not parsed
     fn parse_expression(self: *Parser, p: precedence) ParserError!ast.Expression {
         const prefix_fn = self.prefix_parse_fns.get(self.cur_token.token_type) orelse {
             print("no prefix parse fn found for: {s}", .{self.cur_token.literal});
@@ -266,6 +344,7 @@ const Parser = struct {
 
         // Todo: does the below statement get parsed as expected?
         // 1 + 2 * 3
+        // Todo: not bound
         while (!self.peek_token_is(token.TokenType.Semicolon) and @intFromEnum(p) < @intFromEnum(self.peek_precedence())) {
             const infix = self.infix_parse_fns.get(self.peek_token.token_type) orelse {
                 print("no infix parse fn found for: {s}", .{self.cur_token.literal});
@@ -291,6 +370,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try precedence_look_up.put(token.TokenType.Plus, precedence.sum);
     try precedence_look_up.put(token.TokenType.Slash, precedence.product);
     try precedence_look_up.put(token.TokenType.Asterix, precedence.product);
+    try precedence_look_up.put(token.TokenType.Lparen, precedence.call);
 
     var p = try allocator.create(Parser);
     p.* = Parser{
@@ -302,6 +382,8 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
         .infix_parse_fns = std.AutoHashMap(token.TokenType, infix_parse_fn).init(allocator),
     };
 
+    // parse prefix
+    try p.register_prefix(token.TokenType.Function, Parser.parse_fn_literal);
     try p.register_prefix(token.TokenType.If, Parser.parse_if_expression);
     try p.register_prefix(token.TokenType.Lparen, Parser.parse_grouped_expression);
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
@@ -311,6 +393,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try p.register_prefix(token.TokenType.Bang, Parser.parse_prefix_expression);
     try p.register_prefix(token.TokenType.Minus, Parser.parse_prefix_expression);
 
+    // parse infix
     try p.register_infix(token.TokenType.Plus, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.Minus, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.Lt, Parser.parse_infix_expression);
@@ -319,6 +402,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try p.register_infix(token.TokenType.Slash, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.Equal, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.NotEqual, Parser.parse_infix_expression);
+    try p.register_infix(token.TokenType.Lparen, Parser.parse_call_expression);
 
     p.next_token();
     p.next_token();
@@ -383,6 +467,13 @@ fn test_return_statement(allocator: mem.Allocator, stmt: ast.Statement, expected
 
     try testing.expectEqualStrings(expected_return_stmt, stmt.return_statement.token_literal(allocator));
     try testing.expectEqualStrings(expected_return_value, stmt.return_statement.return_value.token_literal(allocator));
+}
+
+fn test_fn_literal_params(allocator: mem.Allocator, fn_literal: ast.FnLiteral, expected_params: [][]const u8) !void {
+    assert(fn_literal.parameters.len == expected_params.len);
+    for (expected_params, 0..) |p, i| {
+        try testing.expectEqualStrings(p, fn_literal.parameters[i].token_literal(allocator));
+    }
 }
 
 fn test_let_statement(allocator: mem.Allocator, stmt: ast.Statement, expected_name: []const u8, expected_value: ?[]const u8) !void {
@@ -522,6 +613,7 @@ test "if expression parsing" {
         .{ .expected_name = "a", .expected_value = "if(b>c){return c}else{return b}", .expected_condition = "b>c", .expected_consequence = "return c", .expected_alternative = "return b" },
     };
 
+    assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
 
@@ -536,5 +628,59 @@ fn test_if_expression(allocator: mem.Allocator, expr: *ast.IfExpression, conditi
     if (!mem.eql(u8, alternative, "")) {
         try testing.expect(@typeInfo(@TypeOf(expr.alternative)).optional.child == ast.BlockStatement);
         try testing.expectEqualStrings(expr.alternative.?.token_literal(allocator), alternative);
+    }
+}
+
+test "fn literal parsing" {
+    const input =
+        \\ let add = fn (x, y) { return x + y };                
+        \\ let sub = fn (x, y) { return x - y };                
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    var expected_params = [_][]const u8{ "x", "y" };
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8, expected_params: [][]const u8 }{
+        .{ .expected_name = "add", .expected_value = "fn(x, y){return x+y}", .expected_params = expected_params[0..expected_params.len] },
+        .{ .expected_name = "sub", .expected_value = "fn(x, y){return x-y}", .expected_params = expected_params[0..expected_params.len] },
+    };
+
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+
+        const fn_literal: ast.FnLiteral = stmt.let_statement.value.fn_literal;
+        try test_fn_literal_params(allocator, fn_literal, tests[i].expected_params);
+    }
+}
+
+test "fn call expression" {
+    const input =
+        \\ let x = add(1 + 1, 2 + 2);
+        \\ let y = sub(x, y);
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
+        .{ .expected_name = "x", .expected_value = "add(1+1,2+2)" },
+        .{ .expected_name = "y", .expected_value = "sub(x,y)" },
+    };
+
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
     }
 }
