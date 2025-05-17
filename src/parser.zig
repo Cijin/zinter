@@ -69,27 +69,40 @@ const Parser = struct {
             assert(stmts.items.len < self.l.input.len);
 
             const stmt = try self.parse_statement();
-            if (stmt) |s| {
-                stmts.append(s) catch unreachable;
-            }
+            stmts.append(stmt) catch unreachable;
             self.next_token();
         }
 
         return ast.Program{ .statements = stmts.items };
     }
 
-    fn parse_statement(self: *Parser) ParserError!?ast.Statement {
+    fn parse_statement(self: *Parser) ParserError!ast.Statement {
         switch (self.cur_token.token_type) {
-            token.TokenType.Let => {
+            .Let => {
                 const let_stmt = try self.parse_let_statement();
                 return ast.Statement{ .let_statement = let_stmt };
             },
-            token.TokenType.Return => {
+            .Return => {
                 const return_stmt = try self.parse_return_statement();
                 return ast.Statement{ .return_statement = return_stmt };
             },
-            else => return null,
+            else => {
+                const stmt = try self.parse_expression_statement();
+                return ast.Statement{ .expression_statement = stmt };
+            },
         }
+    }
+
+    fn parse_expression_statement(self: *Parser) ParserError!ast.ExpressionStatement {
+        var expression_stmt = ast.ExpressionStatement{ .token = self.cur_token, .expression = undefined };
+
+        expression_stmt.expression = try self.parse_expression(precedence.lowest);
+
+        if (self.peek_token_is(token.TokenType.Semicolon)) {
+            self.next_token();
+        }
+
+        return expression_stmt;
     }
 
     fn parse_return_statement(self: *Parser) ParserError!ast.ReturnStatement {
@@ -102,6 +115,10 @@ const Parser = struct {
 
         const p = self.cur_precedence();
         return_stmt.return_value = try self.parse_expression(p);
+
+        if (self.peek_token_is(token.TokenType.Semicolon)) {
+            self.next_token();
+        }
 
         return return_stmt;
     }
@@ -125,6 +142,10 @@ const Parser = struct {
 
         const p = self.cur_precedence();
         let_stmt.value = try self.parse_expression(p);
+
+        if (self.peek_token_is(token.TokenType.Semicolon)) {
+            self.next_token();
+        }
 
         return let_stmt;
     }
@@ -250,9 +271,7 @@ const Parser = struct {
         var stmts = std.ArrayList(ast.Statement).init(self.allocator);
         while (!self.cur_token_is(token.TokenType.Rbrace) and !self.cur_token_is(token.TokenType.Eof)) {
             const stmt = try self.parse_statement();
-            if (stmt) |s| {
-                stmts.append(s) catch unreachable;
-            }
+            stmts.append(stmt) catch unreachable;
             self.next_token();
         }
 
@@ -333,7 +352,6 @@ const Parser = struct {
         return ast.Expression{ .infix_expression = infix_expression };
     }
 
-    // Todo: currently statements like this one: add(x, y); are not parsed
     fn parse_expression(self: *Parser, p: precedence) ParserError!ast.Expression {
         const prefix_fn = self.prefix_parse_fns.get(self.cur_token.token_type) orelse {
             print("no prefix parse fn found for: {s}", .{self.cur_token.literal});
@@ -559,6 +577,50 @@ test "infix expression parsing" {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
 
         const infix_expression: *ast.InfixExpression = stmt.let_statement.value.infix_expression;
+        try test_infix(i64, infix_expression, tests[i].expected_left, tests[i].expected_operator, tests[i].expected_right);
+    }
+}
+
+test "expression statements" {
+    const input =
+        \\ 5 - 6;
+        \\ 5 + 5;
+        \\ 5 * 5;
+        \\ 5 / 5;
+        \\ 5 == 5;
+        \\ 5 != 5;
+        \\ 5 > 5;
+        \\ 5 < 5;
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct {
+        expected_value: []const u8,
+        expected_left: i64,
+        expected_operator: []const u8,
+        expected_right: i64,
+    }{
+        .{ .expected_value = "5-6", .expected_left = 5, .expected_operator = "-", .expected_right = 6 },
+        .{ .expected_value = "5+5", .expected_left = 5, .expected_operator = "+", .expected_right = 5 },
+        .{ .expected_value = "5*5", .expected_left = 5, .expected_operator = "*", .expected_right = 5 },
+        .{ .expected_value = "5/5", .expected_left = 5, .expected_operator = "/", .expected_right = 5 },
+        .{ .expected_value = "5==5", .expected_left = 5, .expected_operator = "==", .expected_right = 5 },
+        .{ .expected_value = "5!=5", .expected_left = 5, .expected_operator = "!=", .expected_right = 5 },
+        .{ .expected_value = "5>5", .expected_left = 5, .expected_operator = ">", .expected_right = 5 },
+        .{ .expected_value = "5<5", .expected_left = 5, .expected_operator = "<", .expected_right = 5 },
+    };
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try testing.expectEqualStrings(tests[i].expected_value, stmt.expression_statement.token_literal(allocator));
+
+        const infix_expression: *ast.InfixExpression = stmt.expression_statement.expression.infix_expression;
         try test_infix(i64, infix_expression, tests[i].expected_left, tests[i].expected_operator, tests[i].expected_right);
     }
 }

@@ -19,6 +19,7 @@ pub const Statement = union(enum) {
     let_statement: LetStatement,
     return_statement: ReturnStatement,
     block_statement: BlockStatement,
+    expression_statement: ExpressionStatement,
 
     pub fn token_literal(self: Statement, allocator: mem.Allocator) []const u8 {
         switch (self) {
@@ -80,6 +81,15 @@ pub const ReturnStatement = struct {
             self.token.literal,
             self.return_value.token_literal(allocator),
         }) catch unreachable;
+    }
+};
+
+pub const ExpressionStatement = struct {
+    token: token.Token,
+    expression: Expression,
+
+    pub fn token_literal(self: ExpressionStatement, allocator: mem.Allocator) []const u8 {
+        return self.expression.token_literal(allocator);
     }
 };
 

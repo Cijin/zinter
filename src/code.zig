@@ -21,18 +21,24 @@ const definition = struct {
 fn make(op: Opcode, operands: []const u64) []u8 {
     const width = op.lookup_definition().width;
 
-    var instruction_size = 1;
+    // Todo: limit array size to instruction width
+    var expected_ins_size: u16 = 1;
     for (width) |w| {
-        instruction_size += w;
+        expected_ins_size += w;
     }
 
-    var instruction: [instruction_size]u8 = undefined;
-    instruction[0] = op;
+    assert(expected_ins_size < 128);
+    // Todo: fix this at some point
+    var instruction: [128]u8 = undefined;
+    instruction[0] = @intFromEnum(op);
     // Todo: copmtime thingy error
-    var ins_idx = 1;
+    // Todo: also fix the usize type
+    var ins_idx: usize = 1;
 
-    for (operands) |o| {
-        switch (width) {
+    for (operands, width) |o, w| {
+        assert(ins_idx < expected_ins_size);
+
+        switch (w) {
             2 => {
                 const high_byte: u8 = @intCast(o >> 8);
                 const low_byte: u8 = @intCast(o & 0xFF);
@@ -44,18 +50,22 @@ fn make(op: Opcode, operands: []const u64) []u8 {
             else => unreachable,
         }
     }
+
+    return instruction[0..ins_idx];
 }
 
 test "make instructions methods" {
     const tests = [_]struct { opcode: Opcode, operand: []const u64, expected_bytes: []const u8 }{
         .{ .opcode = Opcode.opConstant, .operand = &.{65534}, .expected_bytes = &.{ 255, 254 } },
+        .{ .opcode = Opcode.opConstant, .operand = &.{1}, .expected_bytes = &.{ 0, 1 } },
+        .{ .opcode = Opcode.opConstant, .operand = &.{0}, .expected_bytes = &.{ 0, 0 } },
     };
 
     for (tests) |t| {
         const instruction = make(t.opcode, t.operand);
         assert(1 + t.expected_bytes.len == instruction.len);
 
-        assert(t.opcode == instruction[0]);
+        assert(@intFromEnum(t.opcode) == instruction[0]);
         for (t.expected_bytes, 0..) |b, i| {
             try testing.expectEqual(b, instruction[i + 1]);
         }
