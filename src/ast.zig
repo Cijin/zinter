@@ -50,11 +50,12 @@ pub const Program = struct {
     statements: []const Statement,
 
     pub fn token_literal(self: Program, allocator: mem.Allocator) []const u8 {
-        if (self.statements.len > 0) {
-            return self.statements[0].token_literal(allocator);
+        var program_literal: []u8 = "";
+        for (self.statements) |stmt| {
+            program_literal = std.fmt.allocPrint(allocator, "{s}{s}\n", .{ program_literal, stmt.token_literal(allocator) }) catch unreachable;
         }
 
-        return "";
+        return program_literal;
     }
 };
 

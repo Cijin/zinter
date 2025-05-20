@@ -44,24 +44,24 @@ fn New(allocator: mem.Allocator) compiler {
 // 1. Check input hex values, they look totally wrong
 // 2. Check tests for code.make, I don't think it's correct
 test "compiler" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const tests = [_]struct {
         input: []const u8,
         expectedConstants: []const i64,
         expectedInstructions: []const []u8,
     }{
         .{
-            .input = "1 + 2",
+            .input = "1 + 2;",
             .expectedConstants = &.{ 1, 2 },
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{1}),
-                code.make(code.Opcode.opConstant, &.{2}),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
             },
         },
     };
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
 
     for (tests) |t| {
         const l = try lexer.New(allocator, t.input);
