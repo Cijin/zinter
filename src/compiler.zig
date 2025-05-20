@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const mem = std.mem;
-const assert = testing.assert;
+const assert = std.debug.assert;
 
 const code = @import("code.zig");
 const lexer = @import("lexer.zig");
@@ -78,17 +78,13 @@ test "compiler" {
                 try concatted_instr.append(inst);
             }
         }
-        try test_instructions(concatted_instr.items, got.instructions);
 
+        assert(t.expectedConstants.len == got.constants.len);
         for (got.constants, 0..) |constant, i| {
             const int: object.Integer = constant.integer;
             try testing.expectEqual(t.expectedConstants[i], int.value);
         }
-    }
-}
 
-fn test_instructions(expected: []u8, got: []u8) !void {
-    for (got, 0..) |inst, i| {
-        try testing.expectEqual(expected[i], inst);
+        try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
     }
 }
