@@ -8,6 +8,8 @@ const NULL = "null";
 
 pub const Object = union(enum) {
     integer: Integer,
+    boolean: Boolean,
+    null: Null,
 
     fn typ(self: Object) []const u8 {
         switch (self) {
@@ -22,7 +24,7 @@ pub const Object = union(enum) {
     }
 };
 
-const Integer = struct {
+pub const Integer = struct {
     value: i64,
 
     fn typ(_: Integer) []const u8 {
@@ -34,7 +36,7 @@ const Integer = struct {
     }
 };
 
-const Boolean = struct {
+pub const Boolean = struct {
     value: bool,
 
     fn typ(_: Integer) []const u8 {
@@ -46,7 +48,7 @@ const Boolean = struct {
     }
 };
 
-const Null = struct {
+pub const Null = struct {
     fn typ(_: Integer) []const u8 {
         return NULL;
     }

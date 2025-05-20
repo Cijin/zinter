@@ -3,7 +3,7 @@ const mem = std.mem;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-const Opcode = enum(u8) {
+pub const Opcode = enum(u8) {
     opConstant,
 
     pub fn lookup_definition(self: Opcode) definition {
@@ -18,7 +18,7 @@ const definition = struct {
     width: []const u4,
 };
 
-fn make(op: Opcode, operands: []const u64) []u8 {
+pub fn make(op: Opcode, operands: []const i64) []u8 {
     const width = op.lookup_definition().width;
 
     // Todo: limit array size to instruction width
@@ -54,8 +54,10 @@ fn make(op: Opcode, operands: []const u64) []u8 {
     return instruction[0..ins_idx];
 }
 
+// Todo: this test might be wrong
+// 1. Print and check output
 test "make instructions methods" {
-    const tests = [_]struct { opcode: Opcode, operand: []const u64, expected_bytes: []const u8 }{
+    const tests = [_]struct { opcode: Opcode, operand: []const i64, expected_bytes: []const u8 }{
         .{ .opcode = Opcode.opConstant, .operand = &.{65534}, .expected_bytes = &.{ 255, 254 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{1}, .expected_bytes = &.{ 0, 1 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{0}, .expected_bytes = &.{ 0, 0 } },
