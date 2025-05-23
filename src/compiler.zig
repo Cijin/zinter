@@ -16,11 +16,14 @@ const ByteCode = struct {
     constants: []object.Object,
 };
 
-const compiler = struct {
-    instructions: std.ArrayList(u8),
-    constants: std.ArrayList(object.Object),
+const Compiler = struct {
+    instructions: ?[]u8,
+    constants: ?[]object.Object,
+    allocator: mem.Allocator,
 
-    fn compile(self: compiler, node: ast.Node) CompilerError!void {
+    // Todo: pointer getting fucked up somewhere during recursion
+    // Maybe return instructions instead of updating pointer directly
+    fn compile(self: *Compiler, node: ast.Node) CompilerError!void {
         switch (node) {
             .program => |p| {
                 for (p.statements) |stmt| {
@@ -39,16 +42,11 @@ const compiler = struct {
                 switch (e) {
                     .infix_expression => |in| {
                         try self.compile(ast.Node{ .expression = in.left });
-
                         try self.compile(ast.Node{ .expression = in.right });
                     },
                     .integer => |int| {
-                        self.constants.append(object.Object{ .integer = object.Integer{ .value = int.value } }) catch unreachable;
-
-                        const idx = self.constants.items.len - 1;
-                        const newInstructions = code.make(code.Opcode.opconstant, &.{idx});
-                        var instr = self.instructions.addManyAsSlice(newInstructions.len);
-                        instr = newInstructions;
+                        self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } });
+                        self.add_instruction();
                     },
                     else => unreachable,
                 }
@@ -56,19 +54,49 @@ const compiler = struct {
         }
     }
 
-    fn byte_code(self: compiler) ByteCode {
+    fn add_constant(self: *Compiler, obj: object.Object) void {
+        var constants = std.ArrayList(object.Object).init(self.allocator);
+        if (self.constants) |c| {
+            constants.appendSlice(c) catch unreachable;
+        }
+
+        constants.append(obj) catch unreachable;
+        self.constants = constants.items;
+    }
+
+    fn add_instruction(self: *Compiler) void {
+        var instructions = std.ArrayList(u8).init(self.allocator);
+        if (self.instructions) |ins| {
+            instructions.appendSlice(ins) catch unreachable;
+        }
+
+        var idx: usize = 0;
+        if (self.constants) |c| {
+            idx = c.len - 1;
+        }
+
+        const newInstructions = code.make(code.Opcode.opConstant, &.{@intCast(idx)}, self.allocator);
+        var instr = instructions.addManyAsSlice(newInstructions.len);
+        instr = newInstructions;
+
+        self.instructions = instructions.items;
+    }
+
+    fn byte_code(self: *Compiler) ByteCode {
         return ByteCode{
-            .instructions = self.instructions.items,
-            .constants = self.constants.items,
+            .instructions = self.instructions orelse &.{},
+            .constants = self.constants orelse &.{},
         };
     }
 };
 
-fn New(allocator: mem.Allocator) compiler {
-    return compiler{
-        .instructions = std.ArrayList(u8).init(allocator),
-        .constants = std.ArrayList(object.Object).init(allocator),
-    };
+fn New(allocator: mem.Allocator) *Compiler {
+    var compiler: Compiler = undefined;
+    compiler.allocator = allocator;
+    compiler.instructions = null;
+    compiler.constants = null;
+
+    return &compiler;
 }
 
 test "compiled arithmatic instructions" {

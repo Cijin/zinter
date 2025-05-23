@@ -18,7 +18,7 @@ const definition = struct {
     width: []const u4,
 };
 
-pub fn make(op: Opcode, operands: []const i64, allocator: mem.Allocator) []u8 {
+pub fn make(op: Opcode, operands: []const u64, allocator: mem.Allocator) []u8 {
     var instruction = std.ArrayList(u8).init(allocator);
     const width = op.lookup_definition().width;
 
@@ -50,7 +50,7 @@ test "make instructions methods" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const tests = [_]struct { opcode: Opcode, operand: []const i64, expected_bytes: []const u8 }{
+    const tests = [_]struct { opcode: Opcode, operand: []const u64, expected_bytes: []const u8 }{
         .{ .opcode = Opcode.opConstant, .operand = &.{65534}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 255, 254 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{1}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 1 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 0 } },
