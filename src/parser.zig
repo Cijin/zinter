@@ -97,7 +97,6 @@ const Parser = struct {
         var expression_stmt = ast.ExpressionStatement{ .token = self.cur_token, .expression = undefined };
 
         expression_stmt.expression = try self.parse_expression(precedence.lowest);
-
         if (self.peek_token_is(token.TokenType.Semicolon)) {
             self.next_token();
         }
@@ -583,6 +582,7 @@ test "infix expression parsing" {
 
 test "expression statements" {
     const input =
+        \\ 1 + 2;
         \\ 5 - 6;
         \\ 5 + 5;
         \\ 5 * 5;
@@ -607,6 +607,7 @@ test "expression statements" {
         expected_operator: []const u8,
         expected_right: i64,
     }{
+        .{ .expected_value = "1+2", .expected_left = 1, .expected_operator = "+", .expected_right = 2 },
         .{ .expected_value = "5-6", .expected_left = 5, .expected_operator = "-", .expected_right = 6 },
         .{ .expected_value = "5+5", .expected_left = 5, .expected_operator = "+", .expected_right = 5 },
         .{ .expected_value = "5*5", .expected_left = 5, .expected_operator = "*", .expected_right = 5 },

@@ -9,7 +9,9 @@ const parser = @import("parser.zig");
 const object = @import("object.zig");
 const ast = @import("ast.zig");
 
-const CompilerError = error{};
+const CompilerError = error{
+    Oom,
+};
 
 const ByteCode = struct {
     instructions: []u8,
@@ -21,8 +23,7 @@ const Compiler = struct {
     constants: ?[]object.Object,
     allocator: mem.Allocator,
 
-    // Todo: pointer getting fucked up somewhere during recursion
-    // Maybe return instructions instead of updating pointer directly
+    // Todo: compile should return the current stack position
     fn compile(self: *Compiler, node: ast.Node) CompilerError!void {
         switch (node) {
             .program => |p| {
@@ -45,8 +46,13 @@ const Compiler = struct {
                         try self.compile(ast.Node{ .expression = in.right });
                     },
                     .integer => |int| {
-                        self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } });
-                        self.add_instruction();
+                        self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
+                            return CompilerError.Oom;
+                        };
+                        // Todo: return top of stack
+                        self.emit() catch {
+                            return CompilerError.Oom;
+                        };
                     },
                     else => unreachable,
                 }
@@ -54,17 +60,17 @@ const Compiler = struct {
         }
     }
 
-    fn add_constant(self: *Compiler, obj: object.Object) void {
+    fn add_constant(self: *Compiler, obj: object.Object) !void {
         var constants = std.ArrayList(object.Object).init(self.allocator);
         if (self.constants) |c| {
-            constants.appendSlice(c) catch unreachable;
+            try constants.appendSlice(c);
         }
 
-        constants.append(obj) catch unreachable;
+        try constants.append(obj);
         self.constants = constants.items;
     }
 
-    fn add_instruction(self: *Compiler) void {
+    fn emit(self: *Compiler) !i64 {
         var instructions = std.ArrayList(u8).init(self.allocator);
         if (self.instructions) |ins| {
             instructions.appendSlice(ins) catch unreachable;
@@ -76,10 +82,12 @@ const Compiler = struct {
         }
 
         const newInstructions = code.make(code.Opcode.opConstant, &.{@intCast(idx)}, self.allocator);
-        var instr = instructions.addManyAsSlice(newInstructions.len);
-        instr = newInstructions;
+        for (newInstructions) |inst| {
+            try instructions.append(inst);
+        }
 
         self.instructions = instructions.items;
+        return @intCast(idx);
     }
 
     fn byte_code(self: *Compiler) ByteCode {
@@ -90,16 +98,19 @@ const Compiler = struct {
     }
 };
 
-fn New(allocator: mem.Allocator) *Compiler {
-    var compiler: Compiler = undefined;
-    compiler.allocator = allocator;
-    compiler.instructions = null;
-    compiler.constants = null;
+fn New(allocator: mem.Allocator) !*Compiler {
+    const compiler = try allocator.create(Compiler);
 
-    return &compiler;
+    compiler.* = Compiler{
+        .allocator = allocator,
+        .instructions = null,
+        .constants = null,
+    };
+
+    return compiler;
 }
 
-test "compiled arithmatic instructions" {
+test "compiled arithmetic instructions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -110,8 +121,8 @@ test "compiled arithmatic instructions" {
         expectedInstructions: []const []u8,
     }{
         .{
-            .input = "1 + 2;",
-            .expectedConstants = &.{ 1, 2 },
+            .input = "4 + 5;",
+            .expectedConstants = &.{ 4, 5 },
             .expectedInstructions = &.{
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
@@ -124,7 +135,7 @@ test "compiled arithmatic instructions" {
         const p = try parser.New(allocator, l);
         const program = try p.parse_program();
 
-        var c = New(allocator);
+        var c = try New(allocator);
         try c.compile(ast.Node{ .program = program });
         const got = c.byte_code();
 
