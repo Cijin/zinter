@@ -13,7 +13,7 @@ const CompilerError = error{
     Oom,
 };
 
-const ByteCode = struct {
+pub const ByteCode = struct {
     instructions: []u8,
     constants: []object.Object,
 };
@@ -23,8 +23,7 @@ const Compiler = struct {
     constants: ?[]object.Object,
     allocator: mem.Allocator,
 
-    // Todo: compile should return the current stack position
-    fn compile(self: *Compiler, node: ast.Node) CompilerError!void {
+    pub fn compile(self: *Compiler, node: ast.Node) CompilerError!void {
         switch (node) {
             .program => |p| {
                 for (p.statements) |stmt| {
@@ -49,7 +48,6 @@ const Compiler = struct {
                         self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
                             return CompilerError.Oom;
                         };
-                        // Todo: return top of stack
                         self.emit() catch {
                             return CompilerError.Oom;
                         };
@@ -70,7 +68,7 @@ const Compiler = struct {
         self.constants = constants.items;
     }
 
-    fn emit(self: *Compiler) !i64 {
+    fn emit(self: *Compiler) !void {
         var instructions = std.ArrayList(u8).init(self.allocator);
         if (self.instructions) |ins| {
             instructions.appendSlice(ins) catch unreachable;
@@ -87,10 +85,9 @@ const Compiler = struct {
         }
 
         self.instructions = instructions.items;
-        return @intCast(idx);
     }
 
-    fn byte_code(self: *Compiler) ByteCode {
+    pub fn byte_code(self: *Compiler) ByteCode {
         return ByteCode{
             .instructions = self.instructions orelse &.{},
             .constants = self.constants orelse &.{},
@@ -98,7 +95,7 @@ const Compiler = struct {
     }
 };
 
-fn New(allocator: mem.Allocator) !*Compiler {
+pub fn New(allocator: mem.Allocator) !*Compiler {
     const compiler = try allocator.create(Compiler);
 
     compiler.* = Compiler{

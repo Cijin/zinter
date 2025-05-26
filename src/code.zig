@@ -8,7 +8,10 @@ pub const Opcode = enum(u8) {
 
     pub fn lookup_definition(self: Opcode) definition {
         return switch (self) {
-            Opcode.opConstant => definition{ .name = "opconstant", .width = &.{2} },
+            Opcode.opConstant => definition{
+                .name = "opconstant",
+                .width = &.{2},
+            },
         };
     }
 };
