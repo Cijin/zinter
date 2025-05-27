@@ -3,7 +3,7 @@ const mem = std.mem;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-pub const Opcode = enum(u8) {
+pub const Opcode = enum {
     opConstant,
 
     pub fn lookup_definition(self: Opcode) definition {

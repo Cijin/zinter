@@ -49,11 +49,11 @@ pub const Boolean = struct {
 };
 
 pub const Null = struct {
-    fn typ(_: Integer) []const u8 {
+    fn typ(_: Null) []const u8 {
         return NULL;
     }
 
-    fn inspect(_: Integer, _: mem.Allocator) []const u8 {
+    fn inspect(_: Null, _: mem.Allocator) []const u8 {
         return NULL;
     }
 };

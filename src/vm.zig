@@ -9,15 +9,12 @@ const ast = @import("ast.zig");
 const object = @import("object.zig");
 const compiler = @import("compiler.zig");
 const code = @import("code.zig");
-// Todo:
-// 2. loop through instructions
-
-const stack_size = 2048;
 
 const RuntimeError = error{
     StackOverflow,
 };
 
+const stack_size = 2048;
 const VM = struct {
     constants: []object.Object,
     instructions: []u8,
@@ -25,24 +22,20 @@ const VM = struct {
     sp: u32,
 
     pub fn run(self: *VM) RuntimeError!void {
-        for (self.instructions, 0..) |instr, i| {
+        var instr_idx: u32 = 0;
+        while (instr_idx < self.instructions.len) {
+            const instr = self.instructions[instr_idx];
             const opcode: code.Opcode = @enumFromInt(instr);
             switch (opcode) {
                 .opConstant => {
-                    // [00000001, 10000000]
-                    // [00000000  00000000]
-                    // [00000000  00000001]
-                    // << 8 [00000001  00000000]
-                    // || [0000000  10000000]
-                    var const_idx: u16 = @intCast(self.instructions[i + 1]);
+                    var const_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
                     const_idx <<= 8;
-                    const_idx |= @intCast(self.instructions[i + 2]);
-                    i += 2;
+                    const_idx |= @intCast(self.instructions[instr_idx + 2]);
+                    instr_idx += 3;
 
                     assert(const_idx < self.constants.len);
-                    self.push(self.constants[const_idx]);
+                    try self.push(self.constants[const_idx]);
                 },
-                else => unreachable,
             }
         }
     }
@@ -52,12 +45,16 @@ const VM = struct {
             return RuntimeError.StackOverflow;
         }
 
-        self.stack[self.sp].* = obj;
+        self.stack[self.sp] = obj;
         self.sp += 1;
     }
 
     fn stack_top(self: *VM) object.Object {
-        return self.stack[self.sp];
+        if (self.sp == 0) {
+            return object.Object{ .null = object.Null{} };
+        }
+
+        return self.stack[self.sp - 1];
     }
 };
 
@@ -104,6 +101,7 @@ test "virtual machine run" {
         var c = try compiler.New(allocator);
         try c.compile(ast.Node{ .program = program });
         const vm = try New(c.byte_code(), allocator);
+        try vm.run();
 
         const expected = object.Object{
             .integer = object.Integer{
