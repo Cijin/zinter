@@ -5,12 +5,17 @@ const assert = std.debug.assert;
 
 pub const Opcode = enum {
     opConstant,
+    opAdd,
 
     pub fn lookup_definition(self: Opcode) definition {
         return switch (self) {
             Opcode.opConstant => definition{
                 .name = "opconstant",
-                .width = &.{2},
+                .operandWidth = &.{2},
+            },
+            Opcode.opAdd => definition{
+                .name = "opAdd",
+                .operandWidth = &.{},
             },
         };
     }
@@ -18,12 +23,12 @@ pub const Opcode = enum {
 
 const definition = struct {
     name: []const u8,
-    width: []const u4,
+    operandWidth: []const u4,
 };
 
 pub fn make(op: Opcode, operands: []const u64, allocator: mem.Allocator) []u8 {
     var instruction = std.ArrayList(u8).init(allocator);
-    const width = op.lookup_definition().width;
+    const width = op.lookup_definition().operandWidth;
 
     var expected_ins_size: u16 = 1;
     for (width) |w| {
@@ -57,6 +62,7 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opConstant, .operand = &.{65534}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 255, 254 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{1}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 1 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 0 } },
+        .{ .opcode = Opcode.opAdd, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opAdd)} },
     };
 
     for (tests) |t| {

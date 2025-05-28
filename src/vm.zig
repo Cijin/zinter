@@ -12,6 +12,7 @@ const code = @import("code.zig");
 
 const RuntimeError = error{
     StackOverflow,
+    StackUnderflow,
 };
 
 const stack_size = 2048;
@@ -36,8 +37,32 @@ const VM = struct {
                     assert(const_idx < self.constants.len);
                     try self.push(self.constants[const_idx]);
                 },
+                .opAdd => {
+                    // Todo: something wrong here, fix this
+                    assert(self.sp >= 2);
+                    const obj1: object.Object = try self.pop();
+                    const operand1: object.Integer = obj1.integer;
+
+                    const obj2: object.Object = try self.pop();
+                    const operand2: object.Integer = obj2.integer;
+
+                    const result = operand1.value + operand2.value;
+
+                    try self.push(object.Object{ .integer = .{ .value = result } });
+                },
             }
         }
+    }
+
+    fn pop(self: *VM) RuntimeError!object.Object {
+        if (self.sp == 0) {
+            return RuntimeError.StackUnderflow;
+        }
+
+        const p = self.stack[self.sp - 1];
+        self.sp -= 1;
+
+        return p;
     }
 
     fn push(self: *VM, obj: object.Object) RuntimeError!void {
@@ -89,7 +114,7 @@ test "virtual machine run" {
         },
         .{
             .input = "1+2;",
-            .expectedInt = 2,
+            .expectedInt = 3,
         },
     };
 

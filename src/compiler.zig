@@ -8,6 +8,7 @@ const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
 const object = @import("object.zig");
 const ast = @import("ast.zig");
+const token = @import("token.zig");
 
 const CompilerError = error{
     Oom,
@@ -43,12 +44,20 @@ const Compiler = struct {
                     .infix_expression => |in| {
                         try self.compile(ast.Node{ .expression = in.left });
                         try self.compile(ast.Node{ .expression = in.right });
+                        switch (in.token.token_type) {
+                            .Plus => {
+                                self.emit(code.Opcode.opAdd, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            else => unreachable,
+                        }
                     },
                     .integer => |int| {
-                        self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
+                        const idx = self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
                             return CompilerError.Oom;
                         };
-                        self.emit() catch {
+                        self.emit(code.Opcode.opConstant, &.{idx}) catch {
                             return CompilerError.Oom;
                         };
                     },
@@ -58,7 +67,7 @@ const Compiler = struct {
         }
     }
 
-    fn add_constant(self: *Compiler, obj: object.Object) !void {
+    fn add_constant(self: *Compiler, obj: object.Object) !u64 {
         var constants = std.ArrayList(object.Object).init(self.allocator);
         if (self.constants) |c| {
             try constants.appendSlice(c);
@@ -66,12 +75,14 @@ const Compiler = struct {
 
         try constants.append(obj);
         self.constants = constants.items;
+
+        return constants.items.len - 1;
     }
 
-    fn emit(self: *Compiler) !void {
+    fn emit(self: *Compiler, operator: code.Opcode, operands: []const u64) !void {
         var instructions = std.ArrayList(u8).init(self.allocator);
         if (self.instructions) |ins| {
-            instructions.appendSlice(ins) catch unreachable;
+            try instructions.appendSlice(ins);
         }
 
         var idx: usize = 0;
@@ -79,7 +90,7 @@ const Compiler = struct {
             idx = c.len - 1;
         }
 
-        const newInstructions = code.make(code.Opcode.opConstant, &.{@intCast(idx)}, self.allocator);
+        const newInstructions = code.make(operator, operands, self.allocator);
         for (newInstructions) |inst| {
             try instructions.append(inst);
         }
@@ -123,6 +134,7 @@ test "compiled arithmetic instructions" {
             .expectedInstructions = &.{
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opAdd, &.{}, allocator),
             },
         },
     };
