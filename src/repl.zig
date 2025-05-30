@@ -14,43 +14,45 @@ pub fn start() !void {
     var bw = io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    try stdout.print("Welcome to zinter v0.0.1.\n{s} ", .{prompt});
-    try bw.flush();
-
-    const stdin = io.getStdIn().reader();
-    var buffer: [1024]u8 = undefined;
-    const result = try stdin.readUntilDelimiter(&buffer, '\n');
-
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const l = lexer.New(allocator, result) catch |err| {
-        std.debug.print("Unable to parse input, lexer failed with error={any}\n", .{err});
-        return;
-    };
-    const p = parser.New(allocator, l) catch |err| {
-        std.debug.print("Unable to parse input, parser failed with error={any}\n", .{err});
-        return;
-    };
+    while (true) {
+        try stdout.print("Welcome to zinter v0.0.1.\nCTRL + c to exit.\n{s} ", .{prompt});
+        try bw.flush();
 
-    const program = p.parse_program() catch |err| {
-        std.debug.print("Unable to parse program, parser failed with error={any}\n", .{err});
-        return;
-    };
+        const stdin = io.getStdIn().reader();
+        var buffer: [1024]u8 = undefined;
+        const result = try stdin.readUntilDelimiter(&buffer, '\n');
 
-    var c = try compiler.New(allocator);
-    c.compile(ast.Node{ .program = program }) catch |err| {
-        std.debug.print("Unable to compile program, compiler failed with error={any}\n", .{err});
-        return;
-    };
-    const virtual_machine = try vm.New(c.byte_code(), allocator);
-    virtual_machine.run() catch |err| {
-        std.debug.print("Unable to execute program,runtime error={any}\n", .{err});
-        return;
-    };
+        const l = lexer.New(allocator, result) catch |err| {
+            std.debug.print("Unable to parse input, lexer failed with error={any}\n", .{err});
+            return;
+        };
+        const p = parser.New(allocator, l) catch |err| {
+            std.debug.print("Unable to parse input, parser failed with error={any}\n", .{err});
+            return;
+        };
 
-    try stdout.print("{s}\n", .{virtual_machine.stack_top().inspect(allocator)});
+        const program = p.parse_program() catch |err| {
+            std.debug.print("Unable to parse program, parser failed with error={any}\n", .{err});
+            return;
+        };
 
-    try bw.flush();
+        var c = try compiler.New(allocator);
+        c.compile(ast.Node{ .program = program }) catch |err| {
+            std.debug.print("Unable to compile program, compiler failed with error={any}\n", .{err});
+            return;
+        };
+        const virtual_machine = try vm.New(c.byte_code(), allocator);
+        virtual_machine.run() catch |err| {
+            std.debug.print("Unable to execute program,runtime error={any}\n", .{err});
+            return;
+        };
+
+        try stdout.print("{s}\n", .{virtual_machine.stack_top().inspect(allocator)});
+
+        try bw.flush();
+    }
 }
