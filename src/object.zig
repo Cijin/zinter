@@ -17,7 +17,7 @@ pub const Object = union(enum) {
         }
     }
 
-    fn inspect(self: Object, allocator: mem.Allocator) []const u8 {
+    pub fn inspect(self: Object, allocator: mem.Allocator) []const u8 {
         switch (self) {
             inline else => |impl| return impl.inspect(allocator),
         }
@@ -32,7 +32,7 @@ pub const Integer = struct {
     }
 
     fn inspect(self: Integer, allocator: mem.Allocator) []const u8 {
-        return fmt.allocPrint(allocator, "{d}", self.value);
+        return fmt.allocPrint(allocator, "{d}", .{self.value}) catch unreachable;
     }
 };
 
@@ -43,8 +43,8 @@ pub const Boolean = struct {
         return BOOL;
     }
 
-    fn inspect(self: Integer, allocator: mem.Allocator) []const u8 {
-        return fmt.allocPrint(allocator, "{}", self.value);
+    fn inspect(self: Boolean, allocator: mem.Allocator) []const u8 {
+        return fmt.allocPrint(allocator, "{}", .{self.value}) catch unreachable;
     }
 };
 

@@ -73,7 +73,7 @@ const VM = struct {
         self.sp += 1;
     }
 
-    fn stack_top(self: *VM) object.Object {
+    pub fn stack_top(self: *VM) object.Object {
         if (self.sp == 0) {
             return object.Object{ .null = object.Null{} };
         }
@@ -82,7 +82,7 @@ const VM = struct {
     }
 };
 
-fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
+pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     const vm = try allocator.create(VM);
     vm.* = VM{
         .constants = b.constants,

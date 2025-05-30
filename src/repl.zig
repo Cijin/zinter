@@ -3,6 +3,9 @@ const io = std.io;
 const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
 const token = @import("token.zig");
+const compiler = @import("compiler.zig");
+const vm = @import("vm.zig");
+const ast = @import("ast.zig");
 
 const prompt = ">>";
 
@@ -35,9 +38,19 @@ pub fn start() !void {
         std.debug.print("Unable to parse program, parser failed with error={any}\n", .{err});
         return;
     };
-    for (program.statements) |stmt| {
-        try stdout.print("{s}\n", .{stmt.token_literal(allocator)});
-    }
+
+    var c = try compiler.New(allocator);
+    c.compile(ast.Node{ .program = program }) catch |err| {
+        std.debug.print("Unable to compile program, compiler failed with error={any}\n", .{err});
+        return;
+    };
+    const virtual_machine = try vm.New(c.byte_code(), allocator);
+    virtual_machine.run() catch |err| {
+        std.debug.print("Unable to execute program,runtime error={any}\n", .{err});
+        return;
+    };
+
+    try stdout.print("{s}\n", .{virtual_machine.stack_top().inspect(allocator)});
 
     try bw.flush();
 }
