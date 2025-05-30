@@ -24,7 +24,7 @@ const VM = struct {
 
     pub fn run(self: *VM) RuntimeError!void {
         var instr_idx: u32 = 0;
-        while (instr_idx < self.instructions.len) {
+        while (instr_idx < self.instructions.len) : (instr_idx += 1) {
             const instr = self.instructions[instr_idx];
             const opcode: code.Opcode = @enumFromInt(instr);
             switch (opcode) {
@@ -32,13 +32,12 @@ const VM = struct {
                     var const_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
                     const_idx <<= 8;
                     const_idx |= @intCast(self.instructions[instr_idx + 2]);
-                    instr_idx += 3;
+                    instr_idx += 2;
 
                     assert(const_idx < self.constants.len);
                     try self.push(self.constants[const_idx]);
                 },
                 .opAdd => {
-                    // Todo: something wrong here, fix this
                     assert(self.sp >= 2);
                     const obj1: object.Object = try self.pop();
                     const operand1: object.Integer = obj1.integer;
@@ -115,6 +114,10 @@ test "virtual machine run" {
         .{
             .input = "1+2;",
             .expectedInt = 3,
+        },
+        .{
+            .input = "2+3;",
+            .expectedInt = 5,
         },
     };
 
