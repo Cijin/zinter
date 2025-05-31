@@ -53,6 +53,21 @@ const Compiler = struct {
                                     return CompilerError.Oom;
                                 };
                             },
+                            .Minus => {
+                                self.emit(code.Opcode.opSub, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            .Asterix => {
+                                self.emit(code.Opcode.opMul, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            .Slash => {
+                                self.emit(code.Opcode.opDiv, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
                             else => unreachable,
                         }
                     },
@@ -138,6 +153,36 @@ test "compiled arithmetic instructions" {
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
                 code.make(code.Opcode.opAdd, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "4 - 5;",
+            .expectedConstants = &.{ 4, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opSub, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "4 * 5;",
+            .expectedConstants = &.{ 4, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opMul, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "4 / 5;",
+            .expectedConstants = &.{ 4, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opDiv, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },

@@ -51,7 +51,7 @@ pub fn start() !void {
             return;
         };
 
-        try stdout.print("{s}\n", .{virtual_machine.stack_top().inspect(allocator)});
+        try stdout.print("{s}\n", .{virtual_machine.last_popped().inspect(allocator)});
 
         try bw.flush();
     }

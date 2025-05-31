@@ -6,6 +6,9 @@ const assert = std.debug.assert;
 pub const Opcode = enum {
     opConstant,
     opAdd,
+    opSub,
+    opMul,
+    opDiv,
     opPop,
 
     pub fn lookup_definition(self: Opcode) definition {
@@ -16,6 +19,18 @@ pub const Opcode = enum {
             },
             .opAdd => definition{
                 .name = "opAdd",
+                .operandWidth = &.{},
+            },
+            .opSub => definition{
+                .name = "opSub",
+                .operandWidth = &.{},
+            },
+            .opMul => definition{
+                .name = "opMul",
+                .operandWidth = &.{},
+            },
+            .opDiv => definition{
+                .name = "opDiv",
                 .operandWidth = &.{},
             },
             .opPop => definition{
@@ -68,6 +83,9 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opConstant, .operand = &.{1}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 1 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 0 } },
         .{ .opcode = Opcode.opAdd, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opAdd)} },
+        .{ .opcode = Opcode.opSub, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opSub)} },
+        .{ .opcode = Opcode.opMul, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opMul)} },
+        .{ .opcode = Opcode.opDiv, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opDiv)} },
     };
 
     for (tests) |t| {

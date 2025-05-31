@@ -13,6 +13,7 @@ const code = @import("code.zig");
 const RuntimeError = error{
     StackOverflow,
     StackUnderflow,
+    DivideByZero,
 };
 
 const stack_size = 2048;
@@ -45,7 +46,46 @@ const VM = struct {
                     const obj2: object.Object = try self.pop();
                     const operand2: object.Integer = obj2.integer;
 
-                    const result = operand1.value + operand2.value;
+                    const result = operand2.value + operand1.value;
+
+                    try self.push(object.Object{ .integer = .{ .value = result } });
+                },
+                .opSub => {
+                    assert(self.sp >= 2);
+                    const obj1: object.Object = try self.pop();
+                    const operand1: object.Integer = obj1.integer;
+
+                    const obj2: object.Object = try self.pop();
+                    const operand2: object.Integer = obj2.integer;
+
+                    const result = operand2.value - operand1.value;
+
+                    try self.push(object.Object{ .integer = .{ .value = result } });
+                },
+                .opMul => {
+                    assert(self.sp >= 2);
+                    const obj1: object.Object = try self.pop();
+                    const operand1: object.Integer = obj1.integer;
+
+                    const obj2: object.Object = try self.pop();
+                    const operand2: object.Integer = obj2.integer;
+
+                    const result = operand2.value * operand1.value;
+
+                    try self.push(object.Object{ .integer = .{ .value = result } });
+                },
+                .opDiv => {
+                    assert(self.sp >= 2);
+                    const obj1: object.Object = try self.pop();
+                    const operand1: object.Integer = obj1.integer;
+
+                    const obj2: object.Object = try self.pop();
+                    const operand2: object.Integer = obj2.integer;
+
+                    if (operand1.value == 0) {
+                        return RuntimeError.DivideByZero;
+                    }
+                    const result = @divTrunc(operand2.value, operand1.value);
 
                     try self.push(object.Object{ .integer = .{ .value = result } });
                 },
@@ -76,7 +116,7 @@ const VM = struct {
         self.sp += 1;
     }
 
-    pub fn stack_top(self: *VM) object.Object {
+    fn stack_top(self: *VM) object.Object {
         if (self.sp == 0) {
             return object.Object{ .null = object.Null{} };
         }
@@ -84,7 +124,7 @@ const VM = struct {
         return self.stack[self.sp - 1];
     }
 
-    fn last_popped(self: *VM) object.Object {
+    pub fn last_popped(self: *VM) object.Object {
         return self.stack[self.sp];
     }
 };
@@ -119,12 +159,24 @@ test "virtual machine run" {
             .expectedInt = 2,
         },
         .{
-            .input = "1+2;",
+            .input = "2+3;",
+            .expectedInt = 5,
+        },
+        .{
+            .input = "2-3;",
+            .expectedInt = -1,
+        },
+        .{
+            .input = "2*3;",
+            .expectedInt = 6,
+        },
+        .{
+            .input = "6/2;",
             .expectedInt = 3,
         },
         .{
-            .input = "2+3;",
-            .expectedInt = 5,
+            .input = "50 / 2 * 2 + 10 - 5",
+            .expectedInt = 55,
         },
     };
 
