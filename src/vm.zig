@@ -49,6 +49,9 @@ const VM = struct {
 
                     try self.push(object.Object{ .integer = .{ .value = result } });
                 },
+                .opPop => {
+                    _ = try self.pop();
+                },
             }
         }
     }
@@ -79,6 +82,10 @@ const VM = struct {
         }
 
         return self.stack[self.sp - 1];
+    }
+
+    fn last_popped(self: *VM) object.Object {
+        return self.stack[self.sp];
     }
 };
 
@@ -137,6 +144,6 @@ test "virtual machine run" {
             },
         };
 
-        try testing.expectEqual(expected, vm.stack_top());
+        try testing.expectEqual(expected, vm.last_popped());
     }
 }

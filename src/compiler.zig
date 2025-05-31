@@ -35,6 +35,9 @@ const Compiler = struct {
                 switch (s) {
                     .expression_statement => |es| {
                         try self.compile(ast.Node{ .expression = es.expression });
+                        self.emit(code.Opcode.opPop, &.{}) catch {
+                            return CompilerError.Oom;
+                        };
                     },
                     else => unreachable,
                 }
@@ -135,6 +138,7 @@ test "compiled arithmetic instructions" {
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
                 code.make(code.Opcode.opAdd, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
     };

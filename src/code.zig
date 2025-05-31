@@ -6,15 +6,20 @@ const assert = std.debug.assert;
 pub const Opcode = enum {
     opConstant,
     opAdd,
+    opPop,
 
     pub fn lookup_definition(self: Opcode) definition {
         return switch (self) {
-            Opcode.opConstant => definition{
+            .opConstant => definition{
                 .name = "opconstant",
                 .operandWidth = &.{2},
             },
-            Opcode.opAdd => definition{
+            .opAdd => definition{
                 .name = "opAdd",
+                .operandWidth = &.{},
+            },
+            .opPop => definition{
+                .name = "opPop",
                 .operandWidth = &.{},
             },
         };
