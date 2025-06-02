@@ -38,56 +38,55 @@ const VM = struct {
                     assert(const_idx < self.constants.len);
                     try self.push(self.constants[const_idx]);
                 },
-                .opAdd => {
+                .opAdd, .opSub, .opMul, .opDiv, .opEqual, .opNotEqual, .opGt, .opLt => {
                     assert(self.sp >= 2);
+                    // Todo: do not unwrap the value here
+                    // Verify operand type before operation ex: true * true;
                     const obj1: object.Object = try self.pop();
-                    const operand1: object.Integer = obj1.integer;
+                    const right: object.Integer = obj1.integer;
 
                     const obj2: object.Object = try self.pop();
-                    const operand2: object.Integer = obj2.integer;
+                    const left: object.Integer = obj2.integer;
 
-                    const result = operand2.value + operand1.value;
-
-                    try self.push(object.Object{ .integer = .{ .value = result } });
-                },
-                .opSub => {
-                    assert(self.sp >= 2);
-                    const obj1: object.Object = try self.pop();
-                    const operand1: object.Integer = obj1.integer;
-
-                    const obj2: object.Object = try self.pop();
-                    const operand2: object.Integer = obj2.integer;
-
-                    const result = operand2.value - operand1.value;
-
-                    try self.push(object.Object{ .integer = .{ .value = result } });
-                },
-                .opMul => {
-                    assert(self.sp >= 2);
-                    const obj1: object.Object = try self.pop();
-                    const operand1: object.Integer = obj1.integer;
-
-                    const obj2: object.Object = try self.pop();
-                    const operand2: object.Integer = obj2.integer;
-
-                    const result = operand2.value * operand1.value;
-
-                    try self.push(object.Object{ .integer = .{ .value = result } });
-                },
-                .opDiv => {
-                    assert(self.sp >= 2);
-                    const obj1: object.Object = try self.pop();
-                    const operand1: object.Integer = obj1.integer;
-
-                    const obj2: object.Object = try self.pop();
-                    const operand2: object.Integer = obj2.integer;
-
-                    if (operand1.value == 0) {
-                        return RuntimeError.DivideByZero;
+                    switch (opcode) {
+                        .opAdd => {
+                            const result = left.value + right.value;
+                            try self.push(object.Object{ .integer = .{ .value = result } });
+                        },
+                        .opSub => {
+                            const result = left.value - right.value;
+                            try self.push(object.Object{ .integer = .{ .value = result } });
+                        },
+                        .opMul => {
+                            const result = left.value * right.value;
+                            try self.push(object.Object{ .integer = .{ .value = result } });
+                        },
+                        .opDiv => {
+                            const result = @divTrunc(left.value, right.value);
+                            try self.push(object.Object{ .integer = .{ .value = result } });
+                        },
+                        .opEqual => {
+                            const result = left.value == right.value;
+                            try self.push(object.Object{ .boolean = .{ .value = result } });
+                        },
+                        .opNotEqual => {
+                            const result = left.value != right.value;
+                            try self.push(object.Object{ .boolean = .{ .value = result } });
+                        },
+                        .opGt => {
+                            const result = left.value > right.value;
+                            try self.push(object.Object{ .boolean = .{ .value = result } });
+                        },
+                        .opLt => {
+                            const result = left.value < right.value;
+                            try self.push(object.Object{ .boolean = .{ .value = result } });
+                        },
+                        else => unreachable,
                     }
-                    const result = @divTrunc(operand2.value, operand1.value);
-
-                    try self.push(object.Object{ .integer = .{ .value = result } });
+                },
+                .opTrue, .opFalse => {
+                    const value = if (opcode == code.Opcode.opTrue) true else false;
+                    try self.push(object.Object{ .boolean = .{ .value = value } });
                 },
                 .opPop => {
                     _ = try self.pop();
@@ -141,7 +140,92 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     return vm;
 }
 
-test "virtual machine run" {
+test "virtual machine boolean expressions run" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedBoolean: bool,
+    }{
+        .{
+            .input = "false;",
+            .expectedBoolean = false,
+        },
+        .{
+            .input = "true",
+            .expectedBoolean = true,
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        const expected = object.Object{
+            .boolean = object.Boolean{
+                .value = t.expectedBoolean,
+            },
+        };
+
+        try testing.expectEqual(expected, vm.last_popped());
+    }
+}
+
+test "virtual machine boolean results" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedBool: bool,
+    }{
+        .{
+            .input = "5 == 5",
+            .expectedBool = true,
+        },
+        .{
+            .input = "5 != 5",
+            .expectedBool = false,
+        },
+        .{
+            .input = "5 > 5",
+            .expectedBool = false,
+        },
+        .{
+            .input = "5 < 5",
+            .expectedBool = false,
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        const expected = object.Object{
+            .boolean = object.Boolean{
+                .value = t.expectedBool,
+            },
+        };
+
+        try testing.expectEqual(expected, vm.last_popped());
+    }
+}
+test "virtual machine arithmetic operations" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();

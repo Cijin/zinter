@@ -9,6 +9,12 @@ pub const Opcode = enum {
     opSub,
     opMul,
     opDiv,
+    opTrue,
+    opFalse,
+    opEqual,
+    opNotEqual,
+    opGt,
+    opLt,
     opPop,
 
     pub fn lookup_definition(self: Opcode) definition {
@@ -31,6 +37,30 @@ pub const Opcode = enum {
             },
             .opDiv => definition{
                 .name = "opDiv",
+                .operandWidth = &.{},
+            },
+            .opTrue => definition{
+                .name = "opTrue",
+                .operandWidth = &.{},
+            },
+            .opFalse => definition{
+                .name = "opFalse",
+                .operandWidth = &.{},
+            },
+            .opEqual => definition{
+                .name = "opEqual",
+                .operandWidth = &.{},
+            },
+            .opNotEqual => definition{
+                .name = "opNotEqual",
+                .operandWidth = &.{},
+            },
+            .opGt => definition{
+                .name = "opGt",
+                .operandWidth = &.{},
+            },
+            .opLt => definition{
+                .name = "opLt",
                 .operandWidth = &.{},
             },
             .opPop => definition{
@@ -86,6 +116,11 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opSub, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opSub)} },
         .{ .opcode = Opcode.opMul, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opMul)} },
         .{ .opcode = Opcode.opDiv, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opDiv)} },
+        .{ .opcode = Opcode.opTrue, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opTrue)} },
+        .{ .opcode = Opcode.opEqual, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opEqual)} },
+        .{ .opcode = Opcode.opNotEqual, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opNotEqual)} },
+        .{ .opcode = Opcode.opGt, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opGt)} },
+        .{ .opcode = Opcode.opLt, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opLt)} },
     };
 
     for (tests) |t| {

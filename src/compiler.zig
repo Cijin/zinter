@@ -68,11 +68,39 @@ const Compiler = struct {
                                     return CompilerError.Oom;
                                 };
                             },
+                            .Equal => {
+                                self.emit(code.Opcode.opEqual, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            .NotEqual => {
+                                self.emit(code.Opcode.opNotEqual, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            .Lt => {
+                                self.emit(code.Opcode.opLt, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            .Gt => {
+                                self.emit(code.Opcode.opGt, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
                             else => unreachable,
                         }
                     },
                     .integer => |int| {
                         const idx = self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
+                            return CompilerError.Oom;
+                        };
+                        self.emit(code.Opcode.opConstant, &.{idx}) catch {
+                            return CompilerError.Oom;
+                        };
+                    },
+                    .boolean => |b| {
+                        const idx = self.add_constant(object.Object{ .boolean = object.Boolean{ .value = b.value } }) catch {
                             return CompilerError.Oom;
                         };
                         self.emit(code.Opcode.opConstant, &.{idx}) catch {
@@ -136,6 +164,60 @@ pub fn New(allocator: mem.Allocator) !*Compiler {
     return compiler;
 }
 
+test "compiled boolean instructions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedConstants: []const bool,
+        expectedInstructions: []const []u8,
+    }{
+        .{
+            .input = "true;",
+            .expectedConstants = &.{true},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "false;",
+            .expectedConstants = &.{false},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const got = c.byte_code();
+
+        var concatted_instr = std.ArrayList(u8).init(allocator);
+        for (t.expectedInstructions) |insts| {
+            for (insts) |inst| {
+                try concatted_instr.append(inst);
+            }
+        }
+
+        try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
+
+        assert(t.expectedConstants.len == got.constants.len);
+        for (got.constants, 0..) |constant, i| {
+            const b: object.Boolean = constant.boolean;
+            try testing.expectEqual(t.expectedConstants[i], b.value);
+        }
+    }
+}
+
 test "compiled arithmetic instructions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -183,6 +265,46 @@ test "compiled arithmetic instructions" {
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
                 code.make(code.Opcode.opDiv, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "5 == 5;",
+            .expectedConstants = &.{ 5, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opEqual, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "4 != 5;",
+            .expectedConstants = &.{ 4, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opNotEqual, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "4 > 5;",
+            .expectedConstants = &.{ 4, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opGt, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "4 < 5;",
+            .expectedConstants = &.{ 4, 5 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opLt, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
