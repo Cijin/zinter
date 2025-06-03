@@ -212,6 +212,10 @@ test "virtual machine boolean expressions run" {
             .input = "!false",
             .expectedBoolean = true,
         },
+        .{
+            .input = "!!false",
+            .expectedBoolean = false,
+        },
     };
 
     for (tests) |t| {
@@ -328,6 +332,10 @@ test "virtual machine arithmetic operations" {
         .{
             .input = "50 / 2 * 2 + 10 - 5",
             .expectedInt = 55,
+        },
+        .{
+            .input = "50 / 2 * 2 + 10 - 5 - -1",
+            .expectedInt = 56,
         },
     };
 
