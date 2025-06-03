@@ -15,6 +15,8 @@ pub const Opcode = enum {
     opNotEqual,
     opGt,
     opLt,
+    opMinus,
+    opNot,
     opPop,
 
     pub fn lookup_definition(self: Opcode) definition {
@@ -61,6 +63,14 @@ pub const Opcode = enum {
             },
             .opLt => definition{
                 .name = "opLt",
+                .operandWidth = &.{},
+            },
+            .opNot => definition{
+                .name = "opNot",
+                .operandWidth = &.{},
+            },
+            .opMinus => definition{
+                .name = "opMinus",
                 .operandWidth = &.{},
             },
             .opPop => definition{
@@ -121,6 +131,8 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opNotEqual, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opNotEqual)} },
         .{ .opcode = Opcode.opGt, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opGt)} },
         .{ .opcode = Opcode.opLt, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opLt)} },
+        .{ .opcode = Opcode.opMinus, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opMinus)} },
+        .{ .opcode = Opcode.opNot, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opNot)} },
     };
 
     for (tests) |t| {

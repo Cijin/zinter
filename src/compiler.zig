@@ -44,6 +44,23 @@ const Compiler = struct {
             },
             .expression => |e| {
                 switch (e) {
+                    .prefix_expression => |p| {
+                        try self.compile(ast.Node{ .expression = p.right });
+
+                        switch (p.token.token_type) {
+                            .Minus => {
+                                self.emit(code.Opcode.opMinus, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            .Bang => {
+                                self.emit(code.Opcode.opNot, &.{}) catch {
+                                    return CompilerError.Oom;
+                                };
+                            },
+                            else => unreachable,
+                        }
+                    },
                     .infix_expression => |in| {
                         try self.compile(ast.Node{ .expression = in.left });
                         try self.compile(ast.Node{ .expression = in.right });
@@ -187,6 +204,44 @@ test "compiled boolean instructions" {
             .expectedConstants = &.{false},
             .expectedInstructions = &.{
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "true == true",
+            .expectedConstants = &.{ true, true },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opEqual, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "false != false",
+            .expectedConstants = &.{ false, false },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opNotEqual, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "!false;",
+            .expectedConstants = &.{false},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opNot, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "!true;",
+            .expectedConstants = &.{true},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opNot, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },

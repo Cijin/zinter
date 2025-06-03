@@ -14,6 +14,8 @@ const RuntimeError = error{
     StackOverflow,
     StackUnderflow,
     DivideByZero,
+    IncompatibleTypes,
+    IncompatibleOperator,
 };
 
 const stack_size = 2048;
@@ -38,14 +40,16 @@ const VM = struct {
                     assert(const_idx < self.constants.len);
                     try self.push(self.constants[const_idx]);
                 },
-                .opAdd, .opSub, .opMul, .opDiv, .opEqual, .opNotEqual, .opGt, .opLt => {
+                .opAdd, .opSub, .opMul, .opDiv, .opGt, .opLt => {
                     assert(self.sp >= 2);
-                    // Todo: do not unwrap the value here
-                    // Verify operand type before operation ex: true * true;
-                    const obj1: object.Object = try self.pop();
-                    const right: object.Integer = obj1.integer;
 
+                    const obj1: object.Object = try self.pop();
                     const obj2: object.Object = try self.pop();
+
+                    assert(mem.eql(u8, obj1.typ(), object.INT));
+                    assert(mem.eql(u8, obj2.typ(), object.INT));
+
+                    const right: object.Integer = obj1.integer;
                     const left: object.Integer = obj2.integer;
 
                     switch (opcode) {
@@ -83,6 +87,49 @@ const VM = struct {
                         },
                         else => unreachable,
                     }
+                },
+                .opEqual, .opNotEqual => {
+                    assert(self.sp >= 2);
+
+                    const obj1: object.Object = try self.pop();
+                    const obj2: object.Object = try self.pop();
+                    if (!mem.eql(u8, obj1.typ(), obj2.typ())) {
+                        return RuntimeError.IncompatibleTypes;
+                    }
+
+                    switch (opcode) {
+                        .opEqual => {
+                            const result = obj1.equal(obj2);
+                            try self.push(object.Object{ .boolean = .{ .value = result } });
+                        },
+                        .opNotEqual => {
+                            const result = obj1.not_equal(obj2);
+                            try self.push(object.Object{ .boolean = .{ .value = result } });
+                        },
+                        else => unreachable,
+                    }
+                },
+                .opNot => {
+                    assert(self.sp >= 1);
+
+                    const obj1: object.Object = try self.pop();
+                    if (!mem.eql(u8, obj1.typ(), object.BOOL)) {
+                        return RuntimeError.IncompatibleOperator;
+                    }
+
+                    const right = obj1.boolean.value;
+                    try self.push(object.Object{ .boolean = .{ .value = !right } });
+                },
+                .opMinus => {
+                    assert(self.sp >= 1);
+
+                    const obj1: object.Object = try self.pop();
+                    if (!mem.eql(u8, obj1.typ(), object.INT)) {
+                        return RuntimeError.IncompatibleOperator;
+                    }
+
+                    const right = obj1.integer.value;
+                    try self.push(object.Object{ .integer = .{ .value = -right } });
                 },
                 .opTrue, .opFalse => {
                     const value = if (opcode == code.Opcode.opTrue) true else false;
@@ -157,6 +204,14 @@ test "virtual machine boolean expressions run" {
             .input = "true",
             .expectedBoolean = true,
         },
+        .{
+            .input = "!true",
+            .expectedBoolean = false,
+        },
+        .{
+            .input = "!false",
+            .expectedBoolean = true,
+        },
     };
 
     for (tests) |t| {
@@ -195,6 +250,14 @@ test "virtual machine boolean results" {
         .{
             .input = "5 != 5",
             .expectedBool = false,
+        },
+        .{
+            .input = "true != true",
+            .expectedBool = false,
+        },
+        .{
+            .input = "false  == false",
+            .expectedBool = true,
         },
         .{
             .input = "5 > 5",
@@ -237,6 +300,10 @@ test "virtual machine arithmetic operations" {
         .{
             .input = "1;",
             .expectedInt = 1,
+        },
+        .{
+            .input = "-1;",
+            .expectedInt = -1,
         },
         .{
             .input = "2;",
