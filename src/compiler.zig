@@ -179,6 +179,8 @@ const Compiler = struct {
             try instructions.appendSlice(ins);
         }
 
+        self.add_last_instr(operator, instructions.items.len);
+
         var idx: usize = 0;
         if (self.constants) |c| {
             idx = c.len - 1;
@@ -190,9 +192,6 @@ const Compiler = struct {
         }
 
         self.instructions = instructions.items;
-
-        // Todo:Fix:this will only work for operators without operands
-        self.add_last_instr(operator, instructions.items.len - 1);
     }
 
     pub fn byte_code(self: *Compiler) ByteCode {
