@@ -17,6 +17,8 @@ pub const Opcode = enum {
     opLt,
     opMinus,
     opNot,
+    opJumpNtTrue,
+    opJump,
     opPop,
 
     pub fn lookup_definition(self: Opcode) definition {
@@ -73,6 +75,14 @@ pub const Opcode = enum {
                 .name = "opMinus",
                 .operandWidth = &.{},
             },
+            .opJumpNtTrue => definition{
+                .name = "opJumpIfTrue",
+                .operandWidth = &.{2},
+            },
+            .opJump => definition{
+                .name = "opJump",
+                .operandWidth = &.{2},
+            },
             .opPop => definition{
                 .name = "opPop",
                 .operandWidth = &.{},
@@ -122,6 +132,8 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opConstant, .operand = &.{65534}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 255, 254 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{1}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 1 } },
         .{ .opcode = Opcode.opConstant, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opConstant), 0, 0 } },
+        .{ .opcode = Opcode.opJumpNtTrue, .operand = &.{7}, .expected_bytes = &.{ @intFromEnum(Opcode.opJumpNtTrue), 0, 7 } },
+        .{ .opcode = Opcode.opJump, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opJump), 0, 0 } },
         .{ .opcode = Opcode.opAdd, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opAdd)} },
         .{ .opcode = Opcode.opSub, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opSub)} },
         .{ .opcode = Opcode.opMul, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opMul)} },

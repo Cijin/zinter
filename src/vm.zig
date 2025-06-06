@@ -9,6 +9,7 @@ const ast = @import("ast.zig");
 const object = @import("object.zig");
 const compiler = @import("compiler.zig");
 const code = @import("code.zig");
+const stack_size = @import("machine.zig").stack_size;
 
 const RuntimeError = error{
     StackOverflow,
@@ -18,7 +19,6 @@ const RuntimeError = error{
     IncompatibleOperator,
 };
 
-const stack_size = 2048;
 const VM = struct {
     constants: []object.Object,
     instructions: []u8,
