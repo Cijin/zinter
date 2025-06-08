@@ -43,7 +43,7 @@ const Compiler = struct {
                 switch (s) {
                     .expression_statement => |es| {
                         try self.compile(ast.Node{ .expression = es.expression });
-                        self.emit(code.Opcode.opPop, &.{}) catch {
+                        _ = self.emit(code.Opcode.opPop, &.{}) catch {
                             return CompilerError.Oom;
                         };
                     },
@@ -58,34 +58,45 @@ const Compiler = struct {
             .expression => |e| {
                 switch (e) {
                     .if_expression => |if_e| {
-                        // 1. condition -> infix -> sp+1 sp+1 opcode
-                        // xx make(JUMP 01 sp + 1) -> bytecode sp -> *jump xy -> instruction_ptr?
-                        // 2. consequence -> sp...
-                        // xy = 22
-                        // xx make(JUMP 02 -> sp + 1)
-                        // 3. alternative
-
-                        // Todo:
-                        // let x = if (5 > 6) <consequence> else <alternative>
                         try self.compile(ast.Node{ .expression = if_e.condition });
-                        self.emit(code.Opcode.opJumpNtTrue, &.{stack_size + 1}) catch {
+
+                        const jumpNtTruePos = self.emit(code.Opcode.opJumpNtTrue, &.{stack_size + 1}) catch {
                             return CompilerError.Oom;
                         };
-                        // let x = if (true) { 5; } (pop 5);
+
                         try self.compile(ast.Node{ .statement = .{ .block_statement = if_e.consequence } });
-                        self.remove_last_instr();
+                        if (self.last_instr.?.opcode == code.Opcode.opPop) {
+                            self.remove_last_instr();
+                        }
+
+                        const newJumpNtTrueValue: u64 = self.instructions.?.len;
+                        self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, newJumpNtTrueValue);
+
+                        const jumpPos = self.emit(code.Opcode.opJump, &.{stack_size + 1}) catch {
+                            return CompilerError.Oom;
+                        };
+
+                        if (if_e.alternative) |a| {
+                            try self.compile(ast.Node{ .statement = .{ .block_statement = a } });
+                            if (self.last_instr.?.opcode == code.Opcode.opPop) {
+                                self.remove_last_instr();
+                            }
+                        }
+
+                        const newJumpValue: u64 = self.instructions.?.len;
+                        self.replace_instr(code.Opcode.opJump, jumpPos, newJumpValue);
                     },
                     .prefix_expression => |p| {
                         try self.compile(ast.Node{ .expression = p.right });
 
                         switch (p.token.token_type) {
                             .Minus => {
-                                self.emit(code.Opcode.opMinus, &.{}) catch {
+                                _ = self.emit(code.Opcode.opMinus, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Bang => {
-                                self.emit(code.Opcode.opNot, &.{}) catch {
+                                _ = self.emit(code.Opcode.opNot, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
@@ -97,42 +108,42 @@ const Compiler = struct {
                         try self.compile(ast.Node{ .expression = in.right });
                         switch (in.token.token_type) {
                             .Plus => {
-                                self.emit(code.Opcode.opAdd, &.{}) catch {
+                                _ = self.emit(code.Opcode.opAdd, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Minus => {
-                                self.emit(code.Opcode.opSub, &.{}) catch {
+                                _ = self.emit(code.Opcode.opSub, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Asterix => {
-                                self.emit(code.Opcode.opMul, &.{}) catch {
+                                _ = self.emit(code.Opcode.opMul, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Slash => {
-                                self.emit(code.Opcode.opDiv, &.{}) catch {
+                                _ = self.emit(code.Opcode.opDiv, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Equal => {
-                                self.emit(code.Opcode.opEqual, &.{}) catch {
+                                _ = self.emit(code.Opcode.opEqual, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .NotEqual => {
-                                self.emit(code.Opcode.opNotEqual, &.{}) catch {
+                                _ = self.emit(code.Opcode.opNotEqual, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Lt => {
-                                self.emit(code.Opcode.opLt, &.{}) catch {
+                                _ = self.emit(code.Opcode.opLt, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
                             .Gt => {
-                                self.emit(code.Opcode.opGt, &.{}) catch {
+                                _ = self.emit(code.Opcode.opGt, &.{}) catch {
                                     return CompilerError.Oom;
                                 };
                             },
@@ -143,15 +154,17 @@ const Compiler = struct {
                         const idx = self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
                             return CompilerError.Oom;
                         };
-                        self.emit(code.Opcode.opConstant, &.{idx}) catch {
+                        _ = self.emit(code.Opcode.opConstant, &.{idx}) catch {
                             return CompilerError.Oom;
                         };
                     },
                     .boolean => |b| {
-                        const idx = self.add_constant(object.Object{ .boolean = object.Boolean{ .value = b.value } }) catch {
-                            return CompilerError.Oom;
-                        };
-                        self.emit(code.Opcode.opConstant, &.{idx}) catch {
+                        var op_bool: code.Opcode = code.Opcode.opTrue;
+                        if (!b.value) {
+                            op_bool = code.Opcode.opFalse;
+                        }
+
+                        _ = self.emit(op_bool, &.{}) catch {
                             return CompilerError.Oom;
                         };
                     },
@@ -173,9 +186,11 @@ const Compiler = struct {
         return constants.items.len - 1;
     }
 
-    fn emit(self: *Compiler, operator: code.Opcode, operands: []const u64) !void {
+    fn emit(self: *Compiler, operator: code.Opcode, operands: []const u64) !u64 {
         var instructions = std.ArrayList(u8).init(self.allocator);
+        var pos: u64 = 0;
         if (self.instructions) |ins| {
+            pos = ins.len;
             try instructions.appendSlice(ins);
         }
 
@@ -192,6 +207,8 @@ const Compiler = struct {
         }
 
         self.instructions = instructions.items;
+
+        return pos;
     }
 
     pub fn byte_code(self: *Compiler) ByteCode {
@@ -209,6 +226,18 @@ const Compiler = struct {
         if (self.instructions) |s| {
             self.instructions = s[0..last_instr_pos];
         }
+    }
+
+    fn replace_instr(self: *Compiler, opcode: code.Opcode, pos: u64, value: u64) void {
+        const updated_instrs = code.make(opcode, &.{value}, self.allocator);
+
+        if (self.instructions) |ins| {
+            assert(@intFromEnum(opcode) == ins[pos]);
+
+            for (updated_instrs, pos..) |updated_instr, i| {
+                ins[i] = updated_instr;
+            }
+        } else unreachable;
     }
 
     fn add_last_instr(self: *Compiler, opcode: code.Opcode, pos: u64) void {
@@ -242,59 +271,52 @@ test "compiled boolean instructions" {
 
     const tests = [_]struct {
         input: []const u8,
-        expectedConstants: []const bool,
         expectedInstructions: []const []u8,
     }{
         .{
             .input = "true;",
-            .expectedConstants = &.{true},
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opTrue, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
         .{
             .input = "false;",
-            .expectedConstants = &.{false},
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opFalse, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
         .{
             .input = "true == true",
-            .expectedConstants = &.{ true, true },
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{0}, allocator),
-                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opTrue, &.{}, allocator),
+                code.make(code.Opcode.opTrue, &.{}, allocator),
                 code.make(code.Opcode.opEqual, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
         .{
             .input = "false != false",
-            .expectedConstants = &.{ false, false },
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{0}, allocator),
-                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opFalse, &.{}, allocator),
+                code.make(code.Opcode.opFalse, &.{}, allocator),
                 code.make(code.Opcode.opNotEqual, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
         .{
             .input = "!false;",
-            .expectedConstants = &.{false},
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opFalse, &.{}, allocator),
                 code.make(code.Opcode.opNot, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
         .{
             .input = "!true;",
-            .expectedConstants = &.{true},
             .expectedInstructions = &.{
-                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opTrue, &.{}, allocator),
                 code.make(code.Opcode.opNot, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
@@ -318,12 +340,6 @@ test "compiled boolean instructions" {
         }
 
         try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
-
-        assert(t.expectedConstants.len == got.constants.len);
-        for (got.constants, 0..) |constant, i| {
-            const b: object.Boolean = constant.boolean;
-            try testing.expectEqual(t.expectedConstants[i], b.value);
-        }
     }
 }
 
@@ -456,12 +472,16 @@ test "compiled conditional statements" {
         expectedInstructions: []const []u8,
     }{
         .{
-            .input = "if (true) { 5; }",
-            .expectedConstants = &.{ 4, 3, 5 },
+            .input = "if (true) { 10 } else { 20 }; 3333;",
+            .expectedConstants = &.{ 10, 20, 3333 },
             .expectedInstructions = &.{
+                code.make(code.Opcode.opTrue, &.{}, allocator),
+                code.make(code.Opcode.opJumpNtTrue, &.{7}, allocator),
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
-                code.make(code.Opcode.opJumpNtTrue, &.{3}, allocator),
+                code.make(code.Opcode.opJump, &.{13}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },

@@ -138,6 +138,7 @@ const VM = struct {
                 .opPop => {
                     _ = try self.pop();
                 },
+                else => unreachable,
             }
         }
     }
