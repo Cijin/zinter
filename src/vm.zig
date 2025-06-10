@@ -17,6 +17,7 @@ const RuntimeError = error{
     DivideByZero,
     IncompatibleTypes,
     IncompatibleOperator,
+    UnexpectedType,
 };
 
 const VM = struct {
@@ -138,7 +139,33 @@ const VM = struct {
                 .opPop => {
                     _ = try self.pop();
                 },
-                else => unreachable,
+                .opJumpNtTrue => {
+                    var jump_pos: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    jump_pos <<= 8;
+                    jump_pos |= @intCast(self.instructions[instr_idx + 2]);
+                    instr_idx += 2;
+
+                    // Todo: fix this
+                    // f jump_nt_true pos pos 10 idx idx 3333 idx idx pop
+                    const obj: object.Object = try self.pop();
+                    if (!mem.eql(u8, obj.typ(), object.BOOL)) {
+                        return RuntimeError.UnexpectedType;
+                    }
+
+                    if (!obj.equal(object.TRUE)) {
+                        assert(jump_pos <= self.instructions.len);
+                        instr_idx = jump_pos - 1;
+                    }
+                },
+                .opJump => {
+                    // Todo: test this
+                    var jump_pos: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    jump_pos <<= 8;
+                    jump_pos |= @intCast(self.instructions[instr_idx + 2]);
+
+                    assert(jump_pos <= self.instructions.len);
+                    instr_idx = jump_pos - 1;
+                },
             }
         }
     }
@@ -293,7 +320,8 @@ test "virtual machine boolean results" {
         try testing.expectEqual(expected, vm.last_popped());
     }
 }
-test "virtual machine arithmetic operations" {
+
+test "virtual machine integer expressions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -337,6 +365,61 @@ test "virtual machine arithmetic operations" {
         .{
             .input = "50 / 2 * 2 + 10 - 5 - -1",
             .expectedInt = 56,
+        },
+        .{
+            .input = "if(true) { 10; }",
+            .expectedInt = 10,
+        },
+        .{
+            .input = "if(false) { 10; } 100;",
+            .expectedInt = 100,
+        },
+        .{
+            .input = "if(false) { 10; } else { 20; }",
+            .expectedInt = 20,
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        const expected = object.Object{
+            .integer = object.Integer{
+                .value = t.expectedInt,
+            },
+        };
+
+        try testing.expectEqual(expected, vm.last_popped());
+    }
+}
+
+test "virtual machine if expressions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedInt: i64,
+    }{
+        .{
+            .input = "if(true) { 10; }",
+            .expectedInt = 10,
+        },
+        .{
+            .input = "if(false) { 10; } 100;",
+            .expectedInt = 100,
+        },
+        .{
+            .input = "if(false) { 10; } else { 20; }",
+            .expectedInt = 20,
         },
     };
 

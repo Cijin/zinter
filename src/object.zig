@@ -6,6 +6,8 @@ const mem = std.mem;
 pub const INT = "integer";
 pub const BOOL = "boolean";
 pub const NULL = "null";
+pub const TRUE = Object{ .boolean = .{ .value = true } };
+pub const FALSE = Object{ .boolean = .{ .value = false } };
 
 pub const Object = union(enum) {
     integer: Integer,

@@ -69,22 +69,25 @@ const Compiler = struct {
                             self.remove_last_instr();
                         }
 
-                        const newJumpNtTrueValue: u64 = self.instructions.?.len;
-                        self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, newJumpNtTrueValue);
-
-                        const jumpPos = self.emit(code.Opcode.opJump, &.{stack_size + 1}) catch {
-                            return CompilerError.Oom;
-                        };
-
+                        // if (false) jump_nt_true x { ... } jump y (x) else { ... } (y)
+                        // if (true) jump_nt_true x { ... } jump y (x) else { ... } (y)
+                        // if (false) jump_nt_true x { ... } (x)
                         if (if_e.alternative) |a| {
+                            const jumpPos = self.emit(code.Opcode.opJump, &.{stack_size + 1}) catch {
+                                return CompilerError.Oom;
+                            };
+
+                            self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, self.instructions.?.len);
+
                             try self.compile(ast.Node{ .statement = .{ .block_statement = a } });
                             if (self.last_instr.?.opcode == code.Opcode.opPop) {
                                 self.remove_last_instr();
                             }
-                        }
 
-                        const newJumpValue: u64 = self.instructions.?.len;
-                        self.replace_instr(code.Opcode.opJump, jumpPos, newJumpValue);
+                            self.replace_instr(code.Opcode.opJump, jumpPos, self.instructions.?.len);
+                        } else {
+                            self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, self.instructions.?.len);
+                        }
                     },
                     .prefix_expression => |p| {
                         try self.compile(ast.Node{ .expression = p.right });
@@ -472,11 +475,21 @@ test "compiled conditional statements" {
         expectedInstructions: []const []u8,
     }{
         .{
+            .input = "if (true) { 10; }",
+            .expectedConstants = &.{10},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opTrue, &.{}, allocator),
+                code.make(code.Opcode.opJumpNtTrue, &.{7}, allocator),
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
             .input = "if (true) { 10 } else { 20 }; 3333;",
             .expectedConstants = &.{ 10, 20, 3333 },
             .expectedInstructions = &.{
                 code.make(code.Opcode.opTrue, &.{}, allocator),
-                code.make(code.Opcode.opJumpNtTrue, &.{7}, allocator),
+                code.make(code.Opcode.opJumpNtTrue, &.{10}, allocator),
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opJump, &.{13}, allocator),
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
