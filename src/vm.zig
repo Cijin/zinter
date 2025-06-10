@@ -44,8 +44,8 @@ const VM = struct {
                 .opAdd, .opSub, .opMul, .opDiv, .opGt, .opLt => {
                     assert(self.sp >= 2);
 
-                    const obj1: object.Object = try self.pop();
-                    const obj2: object.Object = try self.pop();
+                    const obj1: object.Object = self.pop();
+                    const obj2: object.Object = self.pop();
 
                     assert(mem.eql(u8, obj1.typ(), object.INT));
                     assert(mem.eql(u8, obj2.typ(), object.INT));
@@ -92,8 +92,8 @@ const VM = struct {
                 .opEqual, .opNotEqual => {
                     assert(self.sp >= 2);
 
-                    const obj1: object.Object = try self.pop();
-                    const obj2: object.Object = try self.pop();
+                    const obj1: object.Object = self.pop();
+                    const obj2: object.Object = self.pop();
                     if (!mem.eql(u8, obj1.typ(), obj2.typ())) {
                         return RuntimeError.IncompatibleTypes;
                     }
@@ -113,7 +113,7 @@ const VM = struct {
                 .opNot => {
                     assert(self.sp >= 1);
 
-                    const obj1: object.Object = try self.pop();
+                    const obj1: object.Object = self.pop();
                     if (!mem.eql(u8, obj1.typ(), object.BOOL)) {
                         return RuntimeError.IncompatibleOperator;
                     }
@@ -124,7 +124,7 @@ const VM = struct {
                 .opMinus => {
                     assert(self.sp >= 1);
 
-                    const obj1: object.Object = try self.pop();
+                    const obj1: object.Object = self.pop();
                     if (!mem.eql(u8, obj1.typ(), object.INT)) {
                         return RuntimeError.IncompatibleOperator;
                     }
@@ -137,7 +137,7 @@ const VM = struct {
                     try self.push(object.Object{ .boolean = .{ .value = value } });
                 },
                 .opPop => {
-                    _ = try self.pop();
+                    _ = self.pop();
                 },
                 .opJumpNtTrue => {
                     var jump_pos: u16 = @intCast(self.instructions[instr_idx + 1]);
@@ -145,9 +145,7 @@ const VM = struct {
                     jump_pos |= @intCast(self.instructions[instr_idx + 2]);
                     instr_idx += 2;
 
-                    // Todo: fix this
-                    // f jump_nt_true pos pos 10 idx idx 3333 idx idx pop
-                    const obj: object.Object = try self.pop();
+                    const obj: object.Object = self.pop();
                     if (!mem.eql(u8, obj.typ(), object.BOOL)) {
                         return RuntimeError.UnexpectedType;
                     }
@@ -158,7 +156,6 @@ const VM = struct {
                     }
                 },
                 .opJump => {
-                    // Todo: test this
                     var jump_pos: u16 = @intCast(self.instructions[instr_idx + 1]);
                     jump_pos <<= 8;
                     jump_pos |= @intCast(self.instructions[instr_idx + 2]);
@@ -166,13 +163,17 @@ const VM = struct {
                     assert(jump_pos <= self.instructions.len);
                     instr_idx = jump_pos - 1;
                 },
+                .opNull => {
+                    try self.push(object.Object{ .null = .{} });
+                },
             }
         }
     }
 
-    fn pop(self: *VM) RuntimeError!object.Object {
+    fn pop(self: *VM) object.Object {
+        assert(self.sp >= 0);
         if (self.sp == 0) {
-            return RuntimeError.StackUnderflow;
+            return object.Object{ .null = .{} };
         }
 
         const p = self.stack[self.sp - 1];
@@ -191,9 +192,7 @@ const VM = struct {
     }
 
     fn stack_top(self: *VM) object.Object {
-        if (self.sp == 0) {
-            return object.Object{ .null = object.Null{} };
-        }
+        assert(self.sp > 0);
 
         return self.stack[self.sp - 1];
     }
@@ -366,18 +365,6 @@ test "virtual machine integer expressions" {
             .input = "50 / 2 * 2 + 10 - 5 - -1",
             .expectedInt = 56,
         },
-        .{
-            .input = "if(true) { 10; }",
-            .expectedInt = 10,
-        },
-        .{
-            .input = "if(false) { 10; } 100;",
-            .expectedInt = 100,
-        },
-        .{
-            .input = "if(false) { 10; } else { 20; }",
-            .expectedInt = 20,
-        },
     };
 
     for (tests) |t| {
@@ -407,19 +394,23 @@ test "virtual machine if expressions" {
 
     const tests = [_]struct {
         input: []const u8,
-        expectedInt: i64,
+        expectedObj: object.Object,
     }{
         .{
             .input = "if(true) { 10; }",
-            .expectedInt = 10,
+            .expectedObj = object.Object{ .integer = .{ .value = 10 } },
         },
         .{
-            .input = "if(false) { 10; } 100;",
-            .expectedInt = 100,
+            .input = "if(true) { 10; } 100;",
+            .expectedObj = object.Object{ .integer = .{ .value = 100 } },
+        },
+        .{
+            .input = "if(false) { 10; }",
+            .expectedObj = object.Object{ .null = .{} },
         },
         .{
             .input = "if(false) { 10; } else { 20; }",
-            .expectedInt = 20,
+            .expectedObj = object.Object{ .integer = .{ .value = 20 } },
         },
     };
 
@@ -433,12 +424,6 @@ test "virtual machine if expressions" {
         const vm = try New(c.byte_code(), allocator);
         try vm.run();
 
-        const expected = object.Object{
-            .integer = object.Integer{
-                .value = t.expectedInt,
-            },
-        };
-
-        try testing.expectEqual(expected, vm.last_popped());
+        try testing.expectEqual(t.expectedObj, vm.last_popped());
     }
 }

@@ -9,17 +9,18 @@ pub const Opcode = enum {
     opSub,
     opMul,
     opDiv,
-    opTrue,
     opFalse,
-    opEqual,
+    opTrue,
     opNotEqual,
-    opGt,
+    opEqual,
     opLt,
+    opGt,
     opMinus,
     opNot,
     opJumpNtTrue,
     opJump,
     opPop,
+    opNull,
 
     pub fn lookup_definition(self: Opcode) definition {
         return switch (self) {
@@ -85,6 +86,10 @@ pub const Opcode = enum {
             },
             .opPop => definition{
                 .name = "opPop",
+                .operandWidth = &.{},
+            },
+            .opNull => definition{
+                .name = "opNull",
                 .operandWidth = &.{},
             },
         };
