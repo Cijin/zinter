@@ -26,6 +26,16 @@ const VM = struct {
     stack: [stack_size]object.Object,
     sp: u32,
 
+    // Todo:
+    // Visual representation of the stack
+    // [ ]
+    // " " " Instructions
+    // [ .... ] | [ .... ]
+    // What instructions are getting executed
+    // What constant is the instruction executing on
+    // Pause
+    // Play
+    // Control rate of execution
     pub fn run(self: *VM) RuntimeError!void {
         var instr_idx: u32 = 0;
         while (instr_idx < self.instructions.len) : (instr_idx += 1) {
@@ -401,12 +411,20 @@ test "virtual machine if expressions" {
             .expectedObj = object.Object{ .integer = .{ .value = 10 } },
         },
         .{
+            .input = "if(!false) { 10; }",
+            .expectedObj = object.Object{ .integer = .{ .value = 10 } },
+        },
+        .{
             .input = "if(true) { 10; } 100;",
             .expectedObj = object.Object{ .integer = .{ .value = 100 } },
         },
         .{
             .input = "if(false) { 10; }",
             .expectedObj = object.Object{ .null = .{} },
+        },
+        .{
+            .input = "if(if(10 > 5) { true; }) { 10; }",
+            .expectedObj = object.Object{ .integer = .{ .value = 10 } },
         },
         .{
             .input = "if(false) { 10; } else { 20; }",

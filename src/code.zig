@@ -21,6 +21,8 @@ pub const Opcode = enum {
     opJump,
     opPop,
     opNull,
+    opSetGlobal,
+    opGetGlobal,
 
     pub fn lookup_definition(self: Opcode) definition {
         return switch (self) {
@@ -92,6 +94,14 @@ pub const Opcode = enum {
                 .name = "opNull",
                 .operandWidth = &.{},
             },
+            .opSetGlobal => definition{
+                .name = "opSetGlobal",
+                .operandWidth = &.{2},
+            },
+            .opGetGlobal => definition{
+                .name = "opGetGlobal",
+                .operandWidth = &.{2},
+            },
         };
     }
 };
@@ -150,6 +160,8 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opLt, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opLt)} },
         .{ .opcode = Opcode.opMinus, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opMinus)} },
         .{ .opcode = Opcode.opNot, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opNot)} },
+        .{ .opcode = Opcode.opSetGlobal, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opSetGlobal), 0, 0 } },
+        .{ .opcode = Opcode.opGetGlobal, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opGetGlobal), 0, 0 } },
     };
 
     for (tests) |t| {

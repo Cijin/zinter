@@ -13,6 +13,8 @@ const stack_size = @import("machine.zig").stack_size;
 
 const CompilerError = error{
     Oom,
+    UndeclaredIdentifier,
+    DuplicateIdentifier,
 };
 
 const EmittedInstruction = struct {
@@ -28,6 +30,7 @@ pub const ByteCode = struct {
 const Compiler = struct {
     instructions: ?[]u8,
     constants: ?[]object.Object,
+    global_var: ?[][]const u8,
     allocator: mem.Allocator,
     prev_instr: ?EmittedInstruction,
     last_instr: ?EmittedInstruction,
@@ -43,14 +46,19 @@ const Compiler = struct {
                 switch (s) {
                     .expression_statement => |es| {
                         try self.compile(ast.Node{ .expression = es.expression });
-                        _ = self.emit(code.Opcode.opPop, &.{}) catch {
-                            return CompilerError.Oom;
-                        };
+                        _ = try self.emit(code.Opcode.opPop, &.{});
                     },
                     .block_statement => |b| {
                         for (b.statements) |stmt| {
                             try self.compile(ast.Node{ .statement = stmt });
                         }
+                    },
+                    .let_statement => |l| {
+                        try self.compile(ast.Node{ .expression = l.value });
+                        const global_idx = self.add_global_variable(l.name.value) catch {
+                            return CompilerError.Oom;
+                        };
+                        _ = try self.emit(code.Opcode.opSetGlobal, &.{global_idx});
                     },
                     else => unreachable,
                 }
@@ -60,19 +68,14 @@ const Compiler = struct {
                     .if_expression => |if_e| {
                         try self.compile(ast.Node{ .expression = if_e.condition });
 
-                        const jumpNtTruePos = self.emit(code.Opcode.opJumpNtTrue, &.{stack_size + 1}) catch {
-                            return CompilerError.Oom;
-                        };
+                        const jumpNtTruePos = try self.emit(code.Opcode.opJumpNtTrue, &.{stack_size + 1});
 
                         try self.compile(ast.Node{ .statement = .{ .block_statement = if_e.consequence } });
                         if (self.last_instr.?.opcode == code.Opcode.opPop) {
                             self.remove_last_instr();
                         }
 
-                        const jumpPos = self.emit(code.Opcode.opJump, &.{stack_size + 1}) catch {
-                            return CompilerError.Oom;
-                        };
-
+                        const jumpPos = try self.emit(code.Opcode.opJump, &.{stack_size + 1});
                         self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, self.instructions.?.len);
 
                         if (if_e.alternative) |a| {
@@ -81,9 +84,7 @@ const Compiler = struct {
                                 self.remove_last_instr();
                             }
                         } else {
-                            _ = self.emit(code.Opcode.opNull, &.{}) catch {
-                                return CompilerError.Oom;
-                            };
+                            _ = try self.emit(code.Opcode.opNull, &.{});
                         }
 
                         self.replace_instr(code.Opcode.opJump, jumpPos, self.instructions.?.len);
@@ -93,14 +94,10 @@ const Compiler = struct {
 
                         switch (p.token.token_type) {
                             .Minus => {
-                                _ = self.emit(code.Opcode.opMinus, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opMinus, &.{});
                             },
                             .Bang => {
-                                _ = self.emit(code.Opcode.opNot, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opNot, &.{});
                             },
                             else => unreachable,
                         }
@@ -110,55 +107,43 @@ const Compiler = struct {
                         try self.compile(ast.Node{ .expression = in.right });
                         switch (in.token.token_type) {
                             .Plus => {
-                                _ = self.emit(code.Opcode.opAdd, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opAdd, &.{});
                             },
                             .Minus => {
-                                _ = self.emit(code.Opcode.opSub, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opSub, &.{});
                             },
                             .Asterix => {
-                                _ = self.emit(code.Opcode.opMul, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opMul, &.{});
                             },
                             .Slash => {
-                                _ = self.emit(code.Opcode.opDiv, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opDiv, &.{});
                             },
                             .Equal => {
-                                _ = self.emit(code.Opcode.opEqual, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opEqual, &.{});
                             },
                             .NotEqual => {
-                                _ = self.emit(code.Opcode.opNotEqual, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opNotEqual, &.{});
                             },
                             .Lt => {
-                                _ = self.emit(code.Opcode.opLt, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opLt, &.{});
                             },
                             .Gt => {
-                                _ = self.emit(code.Opcode.opGt, &.{}) catch {
-                                    return CompilerError.Oom;
-                                };
+                                _ = try self.emit(code.Opcode.opGt, &.{});
                             },
                             else => unreachable,
                         }
                     },
+                    .identifier => |ident| {
+                        const idx = self.get_global_var_idx(ident.value);
+                        if (idx == -1) {
+                            return CompilerError.UndeclaredIdentifier;
+                        }
+
+                        _ = try self.emit(code.Opcode.opGetGlobal, &.{@intCast(idx)});
+                    },
                     .integer => |int| {
-                        const idx = self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } }) catch {
-                            return CompilerError.Oom;
-                        };
-                        _ = self.emit(code.Opcode.opConstant, &.{idx}) catch {
-                            return CompilerError.Oom;
-                        };
+                        const idx = try self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } });
+                        _ = try self.emit(code.Opcode.opConstant, &.{idx});
                     },
                     .boolean => |b| {
                         var op_bool: code.Opcode = code.Opcode.opTrue;
@@ -166,9 +151,7 @@ const Compiler = struct {
                             op_bool = code.Opcode.opFalse;
                         }
 
-                        _ = self.emit(op_bool, &.{}) catch {
-                            return CompilerError.Oom;
-                        };
+                        _ = try self.emit(op_bool, &.{});
                     },
                     else => unreachable,
                 }
@@ -176,24 +159,63 @@ const Compiler = struct {
         }
     }
 
-    fn add_constant(self: *Compiler, obj: object.Object) !u64 {
-        var constants = std.ArrayList(object.Object).init(self.allocator);
-        if (self.constants) |c| {
-            try constants.appendSlice(c);
+    fn get_global_var_idx(self: *Compiler, variable_name: []const u8) i64 {
+        if (self.global_var) |global_vars| {
+            for (global_vars, 0..) |v, i| {
+                if (mem.eql(u8, variable_name, v)) {
+                    return @intCast(i);
+                }
+            }
         }
 
-        try constants.append(obj);
+        return -1;
+    }
+
+    fn add_global_variable(self: *Compiler, variable_name: []const u8) CompilerError!u64 {
+        const idx = self.get_global_var_idx(variable_name);
+        if (idx != -1) {
+            return CompilerError.DuplicateIdentifier;
+        }
+
+        var variables = std.ArrayList([]const u8).init(self.allocator);
+        if (self.global_var) |c| {
+            variables.appendSlice(c) catch {
+                return CompilerError.Oom;
+            };
+        }
+
+        variables.append(variable_name) catch {
+            return CompilerError.Oom;
+        };
+        self.global_var = variables.items;
+
+        return variables.items.len - 1;
+    }
+
+    fn add_constant(self: *Compiler, obj: object.Object) CompilerError!u64 {
+        var constants = std.ArrayList(object.Object).init(self.allocator);
+        if (self.constants) |c| {
+            constants.appendSlice(c) catch {
+                return CompilerError.Oom;
+            };
+        }
+
+        constants.append(obj) catch {
+            return CompilerError.Oom;
+        };
         self.constants = constants.items;
 
         return constants.items.len - 1;
     }
 
-    fn emit(self: *Compiler, operator: code.Opcode, operands: []const u64) !u64 {
+    fn emit(self: *Compiler, operator: code.Opcode, operands: []const u64) CompilerError!u64 {
         var instructions = std.ArrayList(u8).init(self.allocator);
         var pos: u64 = 0;
         if (self.instructions) |ins| {
             pos = ins.len;
-            try instructions.appendSlice(ins);
+            instructions.appendSlice(ins) catch {
+                return CompilerError.Oom;
+            };
         }
 
         self.add_last_instr(operator, instructions.items.len);
@@ -205,7 +227,9 @@ const Compiler = struct {
 
         const newInstructions = code.make(operator, operands, self.allocator);
         for (newInstructions) |inst| {
-            try instructions.append(inst);
+            instructions.append(inst) catch {
+                return CompilerError.Oom;
+            };
         }
 
         self.instructions = instructions.items;
@@ -259,6 +283,7 @@ pub fn New(allocator: mem.Allocator) !*Compiler {
         .allocator = allocator,
         .instructions = null,
         .constants = null,
+        .global_var = null,
         .prev_instr = null,
         .last_instr = null,
     };
@@ -510,6 +535,62 @@ test "compiled conditional statements" {
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
                 code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const got = c.byte_code();
+
+        var concatted_instr = std.ArrayList(u8).init(allocator);
+        for (t.expectedInstructions) |insts| {
+            for (insts) |inst| {
+                try concatted_instr.append(inst);
+            }
+        }
+
+        try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
+
+        assert(t.expectedConstants.len == got.constants.len);
+        for (got.constants, 0..) |constant, i| {
+            const int: object.Integer = constant.integer;
+            try testing.expectEqual(t.expectedConstants[i], int.value);
+        }
+    }
+}
+
+test "compile variables" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedConstants: []const i64,
+        expectedInstructions: []const []u8,
+    }{
+        .{
+            .input = "let x = 5;",
+            .expectedConstants = &.{5},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
+            },
+        },
+        .{
+            .input = "let x = 5; x;",
+            .expectedConstants = &.{5},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opGetGlobal, &.{0}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
