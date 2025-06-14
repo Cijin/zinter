@@ -27,6 +27,16 @@ pub const ByteCode = struct {
     constants: []object.Object,
 };
 
+// Todo: update exisiting global_var to symbol table
+// Unless you can get scope info from existing implementation
+const symbol_table = struct {
+    scope: []const u8,
+    symbols: [][]const u8,
+
+    fn add_symbol() void {}
+    fn get_symbol(_: []const u8) void {}
+};
+
 const Compiler = struct {
     instructions: ?[]u8,
     constants: ?[]object.Object,
@@ -68,14 +78,14 @@ const Compiler = struct {
                     .if_expression => |if_e| {
                         try self.compile(ast.Node{ .expression = if_e.condition });
 
-                        const jumpNtTruePos = try self.emit(code.Opcode.opJumpNtTrue, &.{stack_size + 1});
+                        const jumpNtTruePos = try self.emit(code.Opcode.opJumpNtTrue, &.{stack_size});
 
                         try self.compile(ast.Node{ .statement = .{ .block_statement = if_e.consequence } });
                         if (self.last_instr.?.opcode == code.Opcode.opPop) {
                             self.remove_last_instr();
                         }
 
-                        const jumpPos = try self.emit(code.Opcode.opJump, &.{stack_size + 1});
+                        const jumpPos = try self.emit(code.Opcode.opJump, &.{stack_size});
                         self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, self.instructions.?.len);
 
                         if (if_e.alternative) |a| {

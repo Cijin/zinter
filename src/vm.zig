@@ -25,6 +25,7 @@ const VM = struct {
     instructions: []u8,
     stack: [stack_size]object.Object,
     sp: u32,
+    globals: [stack_size]object.Object,
 
     // Todo:
     // Visual representation of the stack
@@ -173,6 +174,22 @@ const VM = struct {
                     assert(jump_pos <= self.instructions.len);
                     instr_idx = jump_pos - 1;
                 },
+                .opSetGlobal => {
+                    var ident_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    ident_idx <<= 8;
+                    ident_idx |= @intCast(self.instructions[instr_idx + 2]);
+                    instr_idx += 2;
+
+                    self.globals[ident_idx] = self.pop();
+                },
+                .opGetGlobal => {
+                    var ident_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    ident_idx <<= 8;
+                    ident_idx |= @intCast(self.instructions[instr_idx + 2]);
+                    instr_idx += 2;
+
+                    try self.push(self.globals[ident_idx]);
+                },
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
                 },
@@ -218,6 +235,7 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
         .constants = b.constants,
         .instructions = b.instructions,
         .stack = undefined,
+        .globals = undefined,
         .sp = 0,
     };
 
@@ -429,6 +447,39 @@ test "virtual machine if expressions" {
         .{
             .input = "if(false) { 10; } else { 20; }",
             .expectedObj = object.Object{ .integer = .{ .value = 20 } },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        try testing.expectEqual(t.expectedObj, vm.last_popped());
+    }
+}
+
+test "virtual machine let statements" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedObj: object.Object,
+    }{
+        .{
+            .input = "let one = 1; one + 2",
+            .expectedObj = object.Object{ .integer = .{ .value = 3 } },
+        },
+        .{
+            .input = "let one = 1; let two = one + one; one + two",
+            .expectedObj = object.Object{ .integer = .{ .value = 3 } },
         },
     };
 
