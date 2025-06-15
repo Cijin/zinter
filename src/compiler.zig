@@ -187,6 +187,7 @@ const Compiler = struct {
             return CompilerError.DuplicateIdentifier;
         }
 
+        // Todo: keep new array list capacity only as many as needed?
         var variables = std.ArrayList([]const u8).init(self.allocator);
         if (self.global_var) |c| {
             variables.appendSlice(c) catch {
@@ -299,6 +300,14 @@ pub fn New(allocator: mem.Allocator) !*Compiler {
     };
 
     return compiler;
+}
+
+pub fn NewWithState(allocator: mem.Allocator, constants: ?[]object.Object, global_variables: ?[][]const u8) !*Compiler {
+    const c = try New(allocator);
+    c.constants = constants;
+    c.global_var = global_variables;
+
+    return c;
 }
 
 test "compiled boolean instructions" {

@@ -242,6 +242,14 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     return vm;
 }
 
+pub fn NewWithState(b: compiler.ByteCode, allocator: mem.Allocator, s: [stack_size]object.Object, g: [stack_size]object.Object) !*VM {
+    const vm = try New(b, allocator);
+    vm.stack = s;
+    vm.globals = g;
+
+    return vm;
+}
+
 test "virtual machine boolean expressions run" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();

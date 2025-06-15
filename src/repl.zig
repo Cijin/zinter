@@ -18,6 +18,9 @@ pub fn start() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    var c = try compiler.New(allocator);
+    var virtual_machine = try vm.New(c.byte_code(), allocator);
+
     while (true) {
         try stdout.print("Welcome to zinter v0.0.1.\nCTRL + c to exit.\n{s} ", .{prompt});
         try bw.flush();
@@ -40,12 +43,13 @@ pub fn start() !void {
             return;
         };
 
-        var c = try compiler.New(allocator);
+        // Todo: fix OOM error
+        c = try compiler.NewWithState(allocator, c.constants, c.global_var);
         c.compile(ast.Node{ .program = program }) catch |err| {
             std.debug.print("Unable to compile program, compiler failed with error={any}\n", .{err});
             return;
         };
-        const virtual_machine = try vm.New(c.byte_code(), allocator);
+        virtual_machine = try vm.NewWithState(c.byte_code(), allocator, virtual_machine.stack, virtual_machine.globals);
         virtual_machine.run() catch |err| {
             std.debug.print("Unable to execute program,runtime error={any}\n", .{err});
             return;
