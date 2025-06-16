@@ -441,7 +441,7 @@ test "virtual machine integer expressions" {
     }
 }
 
-// Todo: this test is failing
+// Todo: this test is failing, fix
 test "virtual machine string expressions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -471,13 +471,9 @@ test "virtual machine string expressions" {
         const vm = try New(c.byte_code(), allocator);
         try vm.run();
 
-        const expected = object.Object{
-            .string = object.String{
-                .value = t.expectedString,
-            },
-        };
-
-        try testing.expectEqual(expected, vm.last_popped());
+        const last_popped = vm.last_popped();
+        try testing.expectEqualStrings(object.STRING, last_popped.typ());
+        try testing.expectEqualStrings(t.expectedString, last_popped.string.value);
     }
 }
 
