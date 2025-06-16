@@ -4,14 +4,20 @@ const assert = std.debug.assert;
 const mem = std.mem;
 
 pub const INT = "integer";
+pub const STRING = "string";
 pub const BOOL = "boolean";
 pub const NULL = "null";
 pub const NULL_OBJ = Object{ .null = .{} };
 pub const TRUE = Object{ .boolean = .{ .value = true } };
 pub const FALSE = Object{ .boolean = .{ .value = false } };
 
+const ObjectError = error{
+    InvalidOperation,
+};
+
 pub const Object = union(enum) {
     integer: Integer,
+    string: String,
     boolean: Boolean,
     null: Null,
 
@@ -62,6 +68,30 @@ pub const Integer = struct {
     fn inspect(self: Integer, allocator: mem.Allocator) []const u8 {
         return fmt.allocPrint(allocator, "{d}", .{self.value}) catch unreachable;
     }
+
+    fn add(self: Integer, to: Integer) ObjectError!Object {
+        return Object{ .integer = .{ .value = self.value + to.value } };
+    }
+};
+
+pub const String = struct {
+    value: []const u8,
+
+    fn typ(_: String) []const u8 {
+        return INT;
+    }
+
+    fn equal(self: String, compared_to: Object) bool {
+        return mem.eql(u8, self.value, compared_to.string.value);
+    }
+
+    fn inspect(self: String, _: mem.Allocator) []const u8 {
+        return self.value;
+    }
+
+    fn add(self: String, to: String) ObjectError!Object {
+        return Object{ .string = .{ .value = self.value + to.value } };
+    }
 };
 
 pub const Boolean = struct {
@@ -78,6 +108,10 @@ pub const Boolean = struct {
     fn inspect(self: Boolean, allocator: mem.Allocator) []const u8 {
         return fmt.allocPrint(allocator, "{}", .{self.value}) catch unreachable;
     }
+
+    fn add(_: Boolean, _: Boolean) ObjectError!Object {
+        return ObjectError.InvalidOperation;
+    }
 };
 
 pub const Null = struct {
@@ -91,5 +125,9 @@ pub const Null = struct {
 
     fn inspect(_: Null, _: mem.Allocator) []const u8 {
         return NULL;
+    }
+
+    fn add(_: Null, _: Null) ObjectError!Object {
+        return ObjectError.InvalidOperation;
     }
 };

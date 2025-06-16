@@ -22,6 +22,7 @@ const RuntimeError = error{
 
 const VM = struct {
     constants: []object.Object,
+    allocator: mem.Allocator,
     instructions: []u8,
     stack: [stack_size]object.Object,
     sp: u32,
@@ -52,7 +53,27 @@ const VM = struct {
                     assert(const_idx < self.constants.len);
                     try self.push(self.constants[const_idx]);
                 },
-                .opAdd, .opSub, .opMul, .opDiv, .opGt, .opLt => {
+                .opAdd => {
+                    assert(self.sp >= 2);
+
+                    const right: object.Object = self.pop();
+                    const left: object.Object = self.pop();
+
+                    assert(mem.eql(u8, left.typ(), right.typ()));
+                    assert(mem.eql(u8, left.typ(), object.INT) or mem.eql(u8, left.typ(), object.STRING));
+
+                    const result = switch (left) {
+                        .integer => object.Object{ .integer = .{ .value = left.integer.value + right.integer.value } },
+                        .string => blk: {
+                            const result = mem.concat(self.allocator, u8, &[_][]const u8{ left.string.value, right.string.value }) catch unreachable;
+                            break :blk object.Object{ .string = .{ .value = result } };
+                        },
+                        else => unreachable,
+                    };
+
+                    try self.push(result);
+                },
+                .opSub, .opMul, .opDiv, .opGt, .opLt => {
                     assert(self.sp >= 2);
 
                     const obj1: object.Object = self.pop();
@@ -65,10 +86,6 @@ const VM = struct {
                     const left: object.Integer = obj2.integer;
 
                     switch (opcode) {
-                        .opAdd => {
-                            const result = left.value + right.value;
-                            try self.push(object.Object{ .integer = .{ .value = result } });
-                        },
                         .opSub => {
                             const result = left.value - right.value;
                             try self.push(object.Object{ .integer = .{ .value = result } });
@@ -233,6 +250,7 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     const vm = try allocator.create(VM);
     vm.* = VM{
         .constants = b.constants,
+        .allocator = allocator,
         .instructions = b.instructions,
         .stack = undefined,
         .globals = undefined,
@@ -416,6 +434,46 @@ test "virtual machine integer expressions" {
         const expected = object.Object{
             .integer = object.Integer{
                 .value = t.expectedInt,
+            },
+        };
+
+        try testing.expectEqual(expected, vm.last_popped());
+    }
+}
+
+// Todo: this test is failing
+test "virtual machine string expressions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedString: []const u8,
+    }{
+        .{
+            .input = "'hello';",
+            .expectedString = "hello",
+        },
+        .{
+            .input = "'hello' + ' world';",
+            .expectedString = "hello world",
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        const expected = object.Object{
+            .string = object.String{
+                .value = t.expectedString,
             },
         };
 

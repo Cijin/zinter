@@ -5,6 +5,7 @@ pub const TokenType = enum {
     Eof,
     Ident,
     Int,
+    String,
     Bang,
     Assign,
     Equal,

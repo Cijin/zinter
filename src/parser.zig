@@ -38,11 +38,14 @@ const Parser = struct {
     prefix_parse_fns: std.AutoHashMap(token.TokenType, prefix_parse_fn),
     infix_parse_fns: std.AutoHashMap(token.TokenType, infix_parse_fn),
 
-    fn next_token(self: *Parser) void {
+    fn next_token(self: *Parser) ParserError!void {
         assert(self.cur_token.token_type != token.TokenType.Eof);
 
         self.cur_token = self.peek_token;
-        self.peek_token = self.l.next_token();
+        self.peek_token = self.l.next_token() catch {
+            print("unterminated string literal", .{});
+            return ParserError.UnexpectedToken;
+        };
     }
 
     fn peek_token_is(self: *Parser, expected: token.TokenType) bool {
@@ -55,7 +58,7 @@ const Parser = struct {
 
     fn expect_peek(self: *Parser, expected: token.TokenType) ParserError!void {
         if (self.peek_token_is(expected)) {
-            self.next_token();
+            try self.next_token();
             return;
         }
 
@@ -70,7 +73,7 @@ const Parser = struct {
 
             const stmt = try self.parse_statement();
             stmts.append(stmt) catch unreachable;
-            self.next_token();
+            try self.next_token();
         }
 
         return ast.Program{ .statements = stmts.items };
@@ -98,7 +101,7 @@ const Parser = struct {
 
         expression_stmt.expression = try self.parse_expression(precedence.lowest);
         if (self.peek_token_is(token.TokenType.Semicolon)) {
-            self.next_token();
+            try self.next_token();
         }
 
         return expression_stmt;
@@ -110,13 +113,13 @@ const Parser = struct {
             .return_value = undefined,
         };
 
-        self.next_token();
+        try self.next_token();
 
         const p = self.cur_precedence();
         return_stmt.return_value = try self.parse_expression(p);
 
         if (self.peek_token_is(token.TokenType.Semicolon)) {
-            self.next_token();
+            try self.next_token();
         }
 
         return return_stmt;
@@ -137,13 +140,13 @@ const Parser = struct {
         let_stmt.name = ident;
 
         try self.expect_peek(token.TokenType.Assign);
-        self.next_token();
+        try self.next_token();
 
         const p = self.cur_precedence();
         let_stmt.value = try self.parse_expression(p);
 
         if (self.peek_token_is(token.TokenType.Semicolon)) {
-            self.next_token();
+            try self.next_token();
         }
 
         return let_stmt;
@@ -169,6 +172,10 @@ const Parser = struct {
         return ast.Expression{ .identifier = ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal } };
     }
 
+    fn parse_string(self: *Parser) ParserError!ast.Expression {
+        return ast.Expression{ .string = ast.String{ .token = self.cur_token, .value = self.cur_token.literal } };
+    }
+
     fn parse_integer(self: *Parser) ParserError!ast.Expression {
         const parsed_int = fmt.parseInt(i64, self.cur_token.literal, 10) catch {
             print("failed to parse integer literal", .{});
@@ -183,7 +190,7 @@ const Parser = struct {
     }
 
     fn parse_grouped_expression(self: *Parser) ParserError!ast.Expression {
-        self.next_token();
+        try self.next_token();
 
         const expression = try self.parse_expression(precedence.lowest);
         if (!self.peek_token_is(token.TokenType.Rparen)) {
@@ -203,7 +210,7 @@ const Parser = struct {
         };
 
         try self.expect_peek(token.TokenType.Lparen);
-        self.next_token();
+        try self.next_token();
 
         if_expression.condition = try self.parse_expression(precedence.lowest);
 
@@ -212,7 +219,7 @@ const Parser = struct {
         if_expression.consequence = try self.parse_block_statements();
 
         if (self.peek_token_is(token.TokenType.Else)) {
-            self.next_token();
+            try self.next_token();
             try self.expect_peek(token.TokenType.Lbrace);
 
             if_expression.alternative = try self.parse_block_statements();
@@ -224,7 +231,7 @@ const Parser = struct {
     fn parse_fn_parameters(self: *Parser) ParserError![]ast.Identifier {
         var identifiers = std.ArrayList(ast.Identifier).init(self.allocator);
         if (self.peek_token_is(token.TokenType.Rparen)) {
-            self.next_token();
+            try self.next_token();
             return identifiers.items;
         }
 
@@ -232,8 +239,8 @@ const Parser = struct {
         identifiers.append(ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal }) catch unreachable;
 
         while (self.peek_token_is(token.TokenType.Comma)) {
-            self.next_token();
-            self.next_token();
+            try self.next_token();
+            try self.next_token();
 
             identifiers.append(ast.Identifier{ .token = self.cur_token, .value = self.cur_token.literal }) catch unreachable;
         }
@@ -265,13 +272,13 @@ const Parser = struct {
             .statements = undefined,
         };
 
-        self.next_token();
+        try self.next_token();
 
         var stmts = std.ArrayList(ast.Statement).init(self.allocator);
         while (!self.cur_token_is(token.TokenType.Rbrace) and !self.cur_token_is(token.TokenType.Eof)) {
             const stmt = try self.parse_statement();
             stmts.append(stmt) catch unreachable;
-            self.next_token();
+            try self.next_token();
         }
 
         block_statement.statements = stmts.items;
@@ -287,7 +294,7 @@ const Parser = struct {
         };
 
         const p = self.cur_precedence();
-        self.next_token();
+        try self.next_token();
         prefix_expression.right = try self.parse_expression(p);
 
         return ast.Expression{ .prefix_expression = prefix_expression };
@@ -314,17 +321,17 @@ const Parser = struct {
     fn parse_arguments(self: *Parser) ParserError![]ast.Expression {
         var args = std.ArrayList(ast.Expression).init(self.allocator);
         if (self.peek_token_is(token.TokenType.Rparen)) {
-            self.next_token();
+            try self.next_token();
             return args.items;
         }
 
-        self.next_token();
+        try self.next_token();
         var arg = try self.parse_expression(precedence.lowest);
         args.append(arg) catch unreachable;
 
         while (self.peek_token_is(token.TokenType.Comma)) {
-            self.next_token();
-            self.next_token();
+            try self.next_token();
+            try self.next_token();
             arg = try self.parse_expression(precedence.lowest);
             args.append(arg) catch unreachable;
         }
@@ -345,7 +352,7 @@ const Parser = struct {
         };
 
         const p = self.cur_precedence();
-        self.next_token();
+        try self.next_token();
         infix_expression.right = try self.parse_expression(p);
 
         return ast.Expression{ .infix_expression = infix_expression };
@@ -364,7 +371,7 @@ const Parser = struct {
                 return ParserError.UnexpectedInfixOperator;
             };
 
-            self.next_token();
+            try self.next_token();
             left_exp = try infix(self, left_exp);
         }
 
@@ -400,6 +407,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try p.register_prefix(token.TokenType.If, Parser.parse_if_expression);
     try p.register_prefix(token.TokenType.Lparen, Parser.parse_grouped_expression);
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
+    try p.register_prefix(token.TokenType.String, Parser.parse_string);
     try p.register_prefix(token.TokenType.Int, Parser.parse_integer);
     try p.register_prefix(token.TokenType.True, Parser.parse_boolean);
     try p.register_prefix(token.TokenType.False, Parser.parse_boolean);
@@ -417,8 +425,8 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try p.register_infix(token.TokenType.NotEqual, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.Lparen, Parser.parse_call_expression);
 
-    p.next_token();
-    p.next_token();
+    try p.next_token();
+    try p.next_token();
 
     return p;
 }
@@ -454,6 +462,7 @@ test "return statement parser" {
         \\ return 5;
         \\ return 10;
         \\ return 69;
+        \\ return 'hello';
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -468,6 +477,7 @@ test "return statement parser" {
         .{ .expected_return_stmt = "return 5", .expected_return_value = "5" },
         .{ .expected_return_stmt = "return 10", .expected_return_value = "10" },
         .{ .expected_return_stmt = "return 69", .expected_return_value = "69" },
+        .{ .expected_return_stmt = "return hello", .expected_return_value = "hello" },
     };
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
@@ -506,6 +516,12 @@ fn test_infix(comptime T: type, infix_expression: *ast.InfixExpression, left: T,
     try testing.expectEqual(infix_expression.right.integer.value, right);
 }
 
+fn test_infix_string(infix_expression: *ast.InfixExpression, left: []const u8, operator: []const u8, right: []const u8) !void {
+    try testing.expectEqualStrings(infix_expression.left.string.value, left);
+    try testing.expectEqualStrings(infix_expression.operator, operator);
+    try testing.expectEqualStrings(infix_expression.right.string.value, right);
+}
+
 fn test_prefix(comptime T: type, prefix_expression: *ast.PrefixExpression, prefix: []const u8, right: T) !void {
     try testing.expectEqual(prefix_expression.operator, prefix);
     try testing.expectEqual(prefix_expression.right.boolean.value, right);
@@ -532,6 +548,37 @@ test "prefix expression parsing" {
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+    }
+}
+
+test "infix string expression parsing" {
+    const input =
+        \\ let a = 'hello' + 'world';
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct {
+        expected_name: []const u8,
+        expected_value: []const u8,
+        expected_left: []const u8,
+        expected_operator: []const u8,
+        expected_right: []const u8,
+    }{
+        .{ .expected_name = "a", .expected_value = "hello+world", .expected_left = "hello", .expected_operator = "+", .expected_right = "world" },
+    };
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+
+        const infix_expression: *ast.InfixExpression = stmt.let_statement.value.infix_expression;
+        try test_infix_string(infix_expression, tests[i].expected_left, tests[i].expected_operator, tests[i].expected_right);
     }
 }
 

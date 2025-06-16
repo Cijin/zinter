@@ -5,6 +5,10 @@ const testing = std.testing;
 
 const token = @import("token.zig");
 
+const LexerError = error{
+    UnterminatedString,
+};
+
 pub const lexer = struct {
     input: []const u8,
     position: i64,
@@ -31,9 +35,8 @@ pub const lexer = struct {
         return l.input[@intCast(l.read_position)];
     }
 
-    pub fn next_token(l: *lexer) token.Token {
+    pub fn next_token(l: *lexer) !token.Token {
         var t: token.Token = undefined;
-
         l.skip_white_space();
 
         t = switch (l.ch) {
@@ -65,6 +68,13 @@ pub const lexer = struct {
             '<' => token.Token{ .token_type = token.TokenType.Lt, .literal = "<" },
             '>' => token.Token{ .token_type = token.TokenType.Gt, .literal = ">" },
             ';' => token.Token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
+            '\'', '"' => blk: {
+                const start_position: usize = @intCast(l.position + 1);
+                try l.read_string();
+                const end_position: usize = @intCast(l.position);
+
+                break :blk token.Token{ .token_type = token.TokenType.String, .literal = l.input[start_position..end_position] };
+            },
             0 => token.Token{ .token_type = token.TokenType.Eof, .literal = undefined },
             else => {
                 const start_position: usize = @intCast(l.position);
@@ -88,6 +98,19 @@ pub const lexer = struct {
         };
         l.read_char();
         return t;
+    }
+
+    fn read_string(l: *lexer) !void {
+        // current character is `'` or `"`
+        l.read_char();
+
+        while (!is_quotation(l.ch)) {
+            if (l.ch == 0 or l.ch == '\n') {
+                return LexerError.UnterminatedString;
+            }
+
+            l.read_char();
+        }
     }
 
     fn read_identifier(l: *lexer) void {
@@ -127,6 +150,10 @@ fn is_integer(ch: u8) bool {
 
 fn is_letter(ch: u8) bool {
     return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or ch == '_';
+}
+
+fn is_quotation(ch: u8) bool {
+    return ch == '\'' or ch == '"';
 }
 
 fn is_white_space(c: u8) bool {
@@ -174,7 +201,7 @@ test "next token method" {
     const l = try New(testing.allocator, input);
     defer testing.allocator.destroy(l);
     for (0..tests.len) |i| {
-        const t = l.next_token();
+        const t = try l.next_token();
 
         try testing.expectEqual(tests[i].expected_type, t.token_type);
         try testing.expectEqualSlices(u8, tests[i].expected_literal, t.literal);
@@ -275,7 +302,35 @@ test "next token with source code" {
     const l = try New(testing.allocator, input);
     defer testing.allocator.destroy(l);
     for (0..tests.len) |i| {
-        const t = l.next_token();
+        const t = try l.next_token();
+
+        try testing.expectEqual(tests[i].expected_type, t.token_type);
+        try testing.expectEqualSlices(u8, tests[i].expected_literal, t.literal);
+    }
+}
+
+test "next token with source code with strings" {
+    const input =
+        \\ let x = "hello";
+        \\ let y = 'world';
+    ;
+    const tests = [_]struct { expected_type: token.TokenType, expected_literal: []const u8 }{
+        .{ .expected_type = token.TokenType.Let, .expected_literal = "let" },
+        .{ .expected_type = token.TokenType.Ident, .expected_literal = "x" },
+        .{ .expected_type = token.TokenType.Assign, .expected_literal = "=" },
+        .{ .expected_type = token.TokenType.String, .expected_literal = "hello" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+        .{ .expected_type = token.TokenType.Let, .expected_literal = "let" },
+        .{ .expected_type = token.TokenType.Ident, .expected_literal = "y" },
+        .{ .expected_type = token.TokenType.Assign, .expected_literal = "=" },
+        .{ .expected_type = token.TokenType.String, .expected_literal = "world" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+    };
+
+    const l = try New(testing.allocator, input);
+    defer testing.allocator.destroy(l);
+    for (0..tests.len) |i| {
+        const t = try l.next_token();
 
         try testing.expectEqual(tests[i].expected_type, t.token_type);
         try testing.expectEqualSlices(u8, tests[i].expected_literal, t.literal);

@@ -151,6 +151,10 @@ const Compiler = struct {
 
                         _ = try self.emit(code.Opcode.opGetGlobal, &.{@intCast(idx)});
                     },
+                    .string => |s| {
+                        const idx = try self.add_constant(object.Object{ .string = object.String{ .value = s.value } });
+                        _ = try self.emit(code.Opcode.opConstant, &.{idx});
+                    },
                     .integer => |int| {
                         const idx = try self.add_constant(object.Object{ .integer = object.Integer{ .value = int.value } });
                         _ = try self.emit(code.Opcode.opConstant, &.{idx});
@@ -310,7 +314,7 @@ pub fn NewWithState(allocator: mem.Allocator, constants: ?[]object.Object, globa
     return c;
 }
 
-test "compiled boolean instructions" {
+test "compiled primitive type instructions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -319,6 +323,22 @@ test "compiled boolean instructions" {
         input: []const u8,
         expectedInstructions: []const []u8,
     }{
+        .{
+            .input = "'hello';",
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "'hello' + 'world';",
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opAdd, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
         .{
             .input = "true;",
             .expectedInstructions = &.{
