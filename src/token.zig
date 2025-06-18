@@ -18,6 +18,8 @@ pub const TokenType = enum {
     Lt,
     Gt,
     Semicolon,
+    Lbracket,
+    Rbracket,
     Lparen,
     Rparen,
     Lbrace,

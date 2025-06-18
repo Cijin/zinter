@@ -78,7 +78,7 @@ pub const String = struct {
     value: []const u8,
 
     fn typ(_: String) []const u8 {
-        return INT;
+        return STRING;
     }
 
     fn equal(self: String, compared_to: Object) bool {

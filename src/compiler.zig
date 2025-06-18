@@ -167,6 +167,13 @@ const Compiler = struct {
 
                         _ = try self.emit(op_bool, &.{});
                     },
+                    .array_literal => |a| {
+                        for (a.elements) |el| {
+                            try self.compile(ast.Node{ .expression = el });
+                        }
+
+                        _ = try self.emit(code.Opcode.opArray, &.{@intCast(a.elements.len)});
+                    },
                     else => unreachable,
                 }
             },
@@ -630,6 +637,80 @@ test "compile variables" {
                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
                 code.make(code.Opcode.opGetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const got = c.byte_code();
+
+        var concatted_instr = std.ArrayList(u8).init(allocator);
+        for (t.expectedInstructions) |insts| {
+            for (insts) |inst| {
+                try concatted_instr.append(inst);
+            }
+        }
+
+        try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
+
+        assert(t.expectedConstants.len == got.constants.len);
+        for (got.constants, 0..) |constant, i| {
+            const int: object.Integer = constant.integer;
+            try testing.expectEqual(t.expectedConstants[i], int.value);
+        }
+    }
+}
+
+test "compile arrays" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedConstants: []const i64,
+        expectedInstructions: []const []u8,
+    }{
+        .{
+            .input = "[1 + 2, 3 - 4, 5 * 6]",
+            .expectedConstants = &.{ 1, 2, 3, 4, 5, 6 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opAdd, &.{}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opConstant, &.{3}, allocator),
+                code.make(code.Opcode.opSub, &.{}, allocator),
+                code.make(code.Opcode.opConstant, &.{4}, allocator),
+                code.make(code.Opcode.opConstant, &.{5}, allocator),
+                code.make(code.Opcode.opMul, &.{}, allocator),
+                code.make(code.Opcode.opArray, &.{3}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "[]",
+            .expectedConstants = &.{},
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opArray, &.{0}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "[0, 1, 2]",
+            .expectedConstants = &.{ 0, 1, 2 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opArray, &.{3}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },

@@ -33,6 +33,7 @@ pub const Expression = union(enum) {
     integer: Integer,
     string: String,
     boolean: Boolean,
+    array_literal: *ArrayLiteral,
     prefix_expression: *PrefixExpression,
     infix_expression: *InfixExpression,
     if_expression: *IfExpression,
@@ -143,6 +144,27 @@ pub const Boolean = struct {
 
     pub fn token_literal(self: Boolean, _: mem.Allocator) []const u8 {
         return self.token.literal;
+    }
+};
+
+pub const ArrayLiteral = struct {
+    token: token.Token,
+    elements: []Expression,
+
+    pub fn token_literal(self: ArrayLiteral, allocator: mem.Allocator) []const u8 {
+        var array_literal = std.fmt.allocPrint(allocator, "{s}", .{
+            self.token.literal,
+        }) catch unreachable;
+
+        for (self.elements, 0..) |e, i| {
+            if (i == self.elements.len - 1) {
+                array_literal = std.fmt.allocPrint(allocator, "{s}{s}]", .{ array_literal, e.token_literal(allocator) }) catch unreachable;
+                break;
+            }
+            array_literal = std.fmt.allocPrint(allocator, "{s}{s},", .{ array_literal, e.token_literal(allocator) }) catch unreachable;
+        }
+
+        return array_literal;
     }
 };
 

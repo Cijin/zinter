@@ -28,6 +28,7 @@ const ParserError = error{
     ParseIntError,
     OutOfMemory,
     MissingClosingParen,
+    MissingClosingBracket,
 };
 
 const Parser = struct {
@@ -187,6 +188,43 @@ const Parser = struct {
 
     fn parse_boolean(self: *Parser) ParserError!ast.Expression {
         return ast.Expression{ .boolean = ast.Boolean{ .token = self.cur_token, .value = self.cur_token.token_type == token.TokenType.True } };
+    }
+
+    fn parse_array_literal(self: *Parser) ParserError!ast.Expression {
+        var array_literal = self.allocator.create(ast.ArrayLiteral) catch unreachable;
+        array_literal.* = ast.ArrayLiteral{
+            .token = self.cur_token,
+            .elements = undefined,
+        };
+
+        array_literal.elements = try self.parse_array_elements();
+
+        return ast.Expression{ .array_literal = array_literal };
+    }
+
+    fn parse_array_elements(self: *Parser) ParserError![]ast.Expression {
+        var elements = std.ArrayList(ast.Expression).init(self.allocator);
+        if (self.peek_token_is(token.TokenType.Rbracket)) {
+            try self.next_token();
+            return elements.items;
+        }
+
+        try self.next_token();
+        var element = try self.parse_expression(precedence.lowest);
+        elements.append(element) catch unreachable;
+
+        while (self.peek_token_is(token.TokenType.Comma)) {
+            try self.next_token();
+            try self.next_token();
+            element = try self.parse_expression(precedence.lowest);
+            elements.append(element) catch unreachable;
+        }
+
+        self.expect_peek(token.TokenType.Rbracket) catch {
+            return ParserError.MissingClosingBracket;
+        };
+
+        return elements.items;
     }
 
     fn parse_grouped_expression(self: *Parser) ParserError!ast.Expression {
@@ -360,7 +398,7 @@ const Parser = struct {
 
     fn parse_expression(self: *Parser, p: precedence) ParserError!ast.Expression {
         const prefix_fn = self.prefix_parse_fns.get(self.cur_token.token_type) orelse {
-            print("no prefix parse fn found for: {s}", .{self.cur_token.literal});
+            print("no prefix parse fn found for: {s}\n", .{self.cur_token.literal});
             return ParserError.UnexpectedPrefix;
         };
         var left_exp = try prefix_fn(self);
@@ -405,6 +443,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     // parse prefix
     try p.register_prefix(token.TokenType.Function, Parser.parse_fn_literal);
     try p.register_prefix(token.TokenType.If, Parser.parse_if_expression);
+    try p.register_prefix(token.TokenType.Lbracket, Parser.parse_array_literal);
     try p.register_prefix(token.TokenType.Lparen, Parser.parse_grouped_expression);
     try p.register_prefix(token.TokenType.Ident, Parser.parse_identifier);
     try p.register_prefix(token.TokenType.String, Parser.parse_string);
@@ -783,6 +822,29 @@ test "fn call expression" {
     const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
         .{ .expected_name = "x", .expected_value = "add(1+1,2+2)" },
         .{ .expected_name = "y", .expected_value = "sub(x,y)" },
+    };
+
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+    }
+}
+
+test "array literal expression" {
+    const input =
+        \\ let x = [1 + 1, 2 + 2];
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
+        .{ .expected_name = "x", .expected_value = "[1+1,2+2]" },
     };
 
     assert(program.statements.len == tests.len);

@@ -210,6 +210,8 @@ const VM = struct {
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
                 },
+                // Todo: complete this
+                .opArray => {},
             }
         }
     }
@@ -441,7 +443,6 @@ test "virtual machine integer expressions" {
     }
 }
 
-// Todo: this test is failing, fix
 test "virtual machine string expressions" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();

@@ -67,6 +67,8 @@ pub const lexer = struct {
             '*' => token.Token{ .token_type = token.TokenType.Asterix, .literal = "*" },
             '<' => token.Token{ .token_type = token.TokenType.Lt, .literal = "<" },
             '>' => token.Token{ .token_type = token.TokenType.Gt, .literal = ">" },
+            '[' => token.Token{ .token_type = token.TokenType.Lbracket, .literal = "[" },
+            ']' => token.Token{ .token_type = token.TokenType.Rbracket, .literal = "]" },
             ';' => token.Token{ .token_type = token.TokenType.Semicolon, .literal = ";" },
             '\'', '"' => blk: {
                 const start_position: usize = @intCast(l.position + 1);
@@ -324,6 +326,42 @@ test "next token with source code with strings" {
         .{ .expected_type = token.TokenType.Ident, .expected_literal = "y" },
         .{ .expected_type = token.TokenType.Assign, .expected_literal = "=" },
         .{ .expected_type = token.TokenType.String, .expected_literal = "world" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+    };
+
+    const l = try New(testing.allocator, input);
+    defer testing.allocator.destroy(l);
+    for (0..tests.len) |i| {
+        const t = try l.next_token();
+
+        try testing.expectEqual(tests[i].expected_type, t.token_type);
+        try testing.expectEqualSlices(u8, tests[i].expected_literal, t.literal);
+    }
+}
+
+test "array literals and element access" {
+    const input =
+        \\ let x = [1, 2];
+        \\ let y = x[0];
+        \\ let z = [1, 2;
+    ;
+    const tests = [_]struct { expected_type: token.TokenType, expected_literal: []const u8 }{
+        .{ .expected_type = token.TokenType.Let, .expected_literal = "let" },
+        .{ .expected_type = token.TokenType.Ident, .expected_literal = "x" },
+        .{ .expected_type = token.TokenType.Assign, .expected_literal = "=" },
+        .{ .expected_type = token.TokenType.Lbracket, .expected_literal = "[" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "1" },
+        .{ .expected_type = token.TokenType.Comma, .expected_literal = "," },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "2" },
+        .{ .expected_type = token.TokenType.Rbracket, .expected_literal = "]" },
+        .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
+        .{ .expected_type = token.TokenType.Let, .expected_literal = "let" },
+        .{ .expected_type = token.TokenType.Ident, .expected_literal = "y" },
+        .{ .expected_type = token.TokenType.Assign, .expected_literal = "=" },
+        .{ .expected_type = token.TokenType.Ident, .expected_literal = "x" },
+        .{ .expected_type = token.TokenType.Lbracket, .expected_literal = "[" },
+        .{ .expected_type = token.TokenType.Int, .expected_literal = "0" },
+        .{ .expected_type = token.TokenType.Rbracket, .expected_literal = "]" },
         .{ .expected_type = token.TokenType.Semicolon, .expected_literal = ";" },
     };
 
