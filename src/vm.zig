@@ -18,6 +18,7 @@ const RuntimeError = error{
     IncompatibleTypes,
     IncompatibleOperator,
     UnexpectedType,
+    Oom,
 };
 
 const VM = struct {
@@ -207,11 +208,26 @@ const VM = struct {
 
                     try self.push(self.globals[ident_idx]);
                 },
+                .opArray => {
+                    var array_len: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    array_len <<= 8;
+                    array_len |= @intCast(self.instructions[instr_idx + 2]);
+                    instr_idx += 2;
+
+                    const array = self.allocator.create(object.Array) catch unreachable;
+                    array.* = object.Array{
+                        .value = &.{},
+                    };
+
+                    if (array_len > 0) {
+                        array.value = self.stack[self.sp - array_len .. array_len];
+                    }
+
+                    try self.push(object.Object{ .array = array });
+                },
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
                 },
-                // Todo: complete this
-                .opArray => {},
             }
         }
     }
@@ -557,5 +573,54 @@ test "virtual machine let statements" {
         try vm.run();
 
         try testing.expectEqual(t.expectedObj, vm.last_popped());
+    }
+}
+
+test "virtual machine array expressions" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedInts: []const i64,
+    }{
+        .{
+            .input = "[];",
+            .expectedInts = &.{},
+        },
+        .{
+            .input = "[1, 2, 3];",
+            .expectedInts = &.{ 1, 2, 3 },
+        },
+        .{
+            .input = "[1 + 2, 3 - 4, 5 * 6, 6 * 6]",
+            .expectedInts = &.{ 3, -1, 30, 36 },
+        },
+        .{
+            .input = "[2*2, 2*2, 3*3];",
+            .expectedInts = &.{ 4, 4, 9 },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        // Todo: works for now, not sure about later
+        var expectedInts: [10]object.Object = undefined;
+        for (t.expectedInts, 0..) |int, i| {
+            expectedInts[i] = object.Object{ .integer = .{ .value = int } };
+        }
+
+        const last_popped = vm.last_popped();
+        try testing.expectEqualStrings(object.ARRAY, last_popped.typ());
+        try testing.expectEqualSlices(object.Object, expectedInts[0..t.expectedInts.len], @constCast(last_popped.array.*.value));
     }
 }

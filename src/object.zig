@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const mem = std.mem;
 
 pub const INT = "integer";
+pub const ARRAY = "array";
 pub const STRING = "string";
 pub const BOOL = "boolean";
 pub const NULL = "null";
@@ -19,6 +20,7 @@ pub const Object = union(enum) {
     integer: Integer,
     string: String,
     boolean: Boolean,
+    array: *Array,
     null: Null,
 
     pub fn typ(self: Object) []const u8 {
@@ -40,7 +42,9 @@ pub const Object = union(enum) {
     pub fn equal(self: Object, compared_to: Object) bool {
         switch (self) {
             inline else => |impl| {
-                assert(mem.eql(u8, self.typ(), compared_to.typ()));
+                if (!mem.eql(u8, self.typ(), compared_to.typ())) {
+                    return false;
+                }
 
                 return impl.equal(compared_to);
             },
@@ -71,6 +75,54 @@ pub const Integer = struct {
 
     fn add(self: Integer, to: Integer) ObjectError!Object {
         return Object{ .integer = .{ .value = self.value + to.value } };
+    }
+};
+
+pub const Array = struct {
+    value: []Object,
+
+    fn typ(_: Array) []const u8 {
+        return ARRAY;
+    }
+
+    fn equal(self: Array, compared_to: Object) bool {
+        if (self.value.ptr == compared_to.array.value.ptr and self.value.len == compared_to.array.value.len) {
+            return true;
+        }
+
+        if (self.value.len != compared_to.array.value.len) {
+            return false;
+        }
+
+        for (self.value, 0..) |a, i| {
+            if (!a.equal(compared_to.array.value[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    fn inspect(self: Array, allocator: mem.Allocator) []const u8 {
+        if (self.value.len == 0) {
+            return "[]";
+        }
+
+        var aol = undefined;
+        for (self.value, 0..) |a, i| {
+            if (i == 0) {
+                aol = std.fmt.allocPrint(allocator, "[{s}", .{a.value}) catch unreachable;
+                continue;
+            }
+
+            aol = std.fmt.allocPrint(allocator, ", {s}", .{a.value}) catch unreachable;
+        }
+
+        aol = std.fmt.allocPrint(allocator, "{s}]", .{aol}) catch unreachable;
+        return aol;
+    }
+
+    fn add(_: Array, _: Array) ObjectError!Object {
+        return ObjectError.InvalidOperation;
     }
 };
 

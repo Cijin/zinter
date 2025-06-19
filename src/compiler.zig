@@ -714,6 +714,19 @@ test "compile arrays" {
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
+        .{
+            .input = "[0, 1, 2, 3, 4]",
+            .expectedConstants = &.{ 0, 1, 2, 3, 4 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opConstant, &.{3}, allocator),
+                code.make(code.Opcode.opConstant, &.{4}, allocator),
+                code.make(code.Opcode.opArray, &.{5}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
     };
 
     for (tests) |t| {
