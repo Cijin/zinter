@@ -18,6 +18,7 @@ const RuntimeError = error{
     IncompatibleTypes,
     IncompatibleOperator,
     UnexpectedType,
+    ArrayIndexOutOfBound,
     Oom,
 };
 
@@ -220,10 +221,28 @@ const VM = struct {
                     };
 
                     if (array_len > 0) {
-                        array.value = self.stack[self.sp - array_len .. array_len];
+                        array.value = self.stack[self.sp - array_len .. self.sp];
                     }
 
                     try self.push(object.Object{ .array = array });
+                },
+                .opIndex => {
+                    const idx = self.pop();
+                    const arr = self.pop();
+                    if (!mem.eql(u8, arr.typ(), object.ARRAY)) {
+                        return RuntimeError.UnexpectedType;
+                    }
+
+                    // Todo: these could be compile time errors
+                    if (!mem.eql(u8, idx.typ(), object.INT)) {
+                        return RuntimeError.UnexpectedType;
+                    }
+
+                    if (idx.integer.value >= arr.array.value.len or idx.integer.value < 0) {
+                        return RuntimeError.ArrayIndexOutOfBound;
+                    }
+
+                    try self.push(arr.array.value[@intCast(idx.integer.value)]);
                 },
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
@@ -437,6 +456,22 @@ test "virtual machine integer expressions" {
             .input = "50 / 2 * 2 + 10 - 5 - -1",
             .expectedInt = 56,
         },
+        .{
+            .input = "[2*2][0]",
+            .expectedInt = 4,
+        },
+        .{
+            .input = "[0, 1, 2][2]",
+            .expectedInt = 2,
+        },
+        .{
+            .input = "[2*2, 1, 2*2][1+1]",
+            .expectedInt = 4,
+        },
+        .{
+            .input = "[[1, 1, 1]][0][0]",
+            .expectedInt = 1,
+        },
     };
 
     for (tests) |t| {
@@ -588,6 +623,10 @@ test "virtual machine array expressions" {
         .{
             .input = "[];",
             .expectedInts = &.{},
+        },
+        .{
+            .input = "[1];",
+            .expectedInts = &.{1},
         },
         .{
             .input = "[1, 2, 3];",

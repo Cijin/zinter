@@ -34,6 +34,7 @@ pub const Expression = union(enum) {
     string: String,
     boolean: Boolean,
     array_literal: *ArrayLiteral,
+    index_expression: *IndexExpression,
     prefix_expression: *PrefixExpression,
     infix_expression: *InfixExpression,
     if_expression: *IfExpression,
@@ -67,7 +68,7 @@ pub const LetStatement = struct {
     value: Expression,
 
     pub fn token_literal(self: LetStatement, allocator: mem.Allocator) []const u8 {
-        return std.fmt.allocPrint(allocator, "{s} = {s} {s}", .{
+        return std.fmt.allocPrint(allocator, "{s} {s} = {s}", .{
             self.token.literal,
             self.name.token_literal(allocator),
             self.value.token_literal(allocator),
@@ -256,6 +257,16 @@ pub const CallExpression = struct {
         }
 
         return call_expression;
+    }
+};
+
+pub const IndexExpression = struct {
+    token: token.Token,
+    array: Expression,
+    index: Expression,
+
+    pub fn token_literal(self: IndexExpression, allocator: mem.Allocator) []const u8 {
+        return std.fmt.allocPrint(allocator, "{s}[{s}]", .{ self.array.token_literal(allocator), self.index.token_literal(allocator) }) catch unreachable;
     }
 };
 

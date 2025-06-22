@@ -24,6 +24,7 @@ pub const Opcode = enum {
     opSetGlobal,
     opGetGlobal,
     opArray,
+    opIndex,
 
     pub fn lookup_definition(self: Opcode) definition {
         return switch (self) {
@@ -106,6 +107,10 @@ pub const Opcode = enum {
             .opArray => definition{
                 .name = "opArray",
                 .operandWidth = &.{2},
+            },
+            .opIndex => definition{
+                .name = "opIndex",
+                .operandWidth = &.{},
             },
         };
     }

@@ -143,8 +143,7 @@ const Parser = struct {
         try self.expect_peek(token.TokenType.Assign);
         try self.next_token();
 
-        const p = self.cur_precedence();
-        let_stmt.value = try self.parse_expression(p);
+        let_stmt.value = try self.parse_expression(precedence.lowest);
 
         if (self.peek_token_is(token.TokenType.Semicolon)) {
             try self.next_token();
@@ -356,6 +355,29 @@ const Parser = struct {
         return ast.Expression{ .call_expression = call_expression };
     }
 
+    fn parse_index_expression(self: *Parser, left: ast.Expression) ParserError!ast.Expression {
+        const index_expres = self.allocator.create(ast.IndexExpression) catch {
+            return ParserError.OutOfMemory;
+        };
+
+        index_expres.* = ast.IndexExpression{
+            .token = self.cur_token,
+            .array = left,
+            .index = undefined,
+        };
+
+        try self.next_token();
+
+        const index = try self.parse_expression(precedence.lowest);
+        index_expres.index = index;
+
+        self.expect_peek(token.TokenType.Rbracket) catch {
+            return ParserError.MissingClosingBracket;
+        };
+
+        return ast.Expression{ .index_expression = index_expres };
+    }
+
     fn parse_arguments(self: *Parser) ParserError![]ast.Expression {
         var args = std.ArrayList(ast.Expression).init(self.allocator);
         if (self.peek_token_is(token.TokenType.Rparen)) {
@@ -429,6 +451,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try precedence_look_up.put(token.TokenType.Slash, precedence.product);
     try precedence_look_up.put(token.TokenType.Asterix, precedence.product);
     try precedence_look_up.put(token.TokenType.Lparen, precedence.call);
+    try precedence_look_up.put(token.TokenType.Lbracket, precedence.call);
 
     var p = try allocator.create(Parser);
     p.* = Parser{
@@ -463,6 +486,7 @@ pub fn New(allocator: mem.Allocator, l: *lexer.lexer) !*Parser {
     try p.register_infix(token.TokenType.Equal, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.NotEqual, Parser.parse_infix_expression);
     try p.register_infix(token.TokenType.Lparen, Parser.parse_call_expression);
+    try p.register_infix(token.TokenType.Lbracket, Parser.parse_index_expression);
 
     try p.next_token();
     try p.next_token();
@@ -830,9 +854,11 @@ test "fn call expression" {
     }
 }
 
-test "array literal expression" {
+test "array and index expression" {
     const input =
         \\ let x = [1 + 1, 2 + 2];
+        \\ let y = [1 + 1, 2 + 2][0];
+        \\ let z = x[1];
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -845,9 +871,11 @@ test "array literal expression" {
 
     const tests = [_]struct { expected_name: []const u8, expected_value: []const u8 }{
         .{ .expected_name = "x", .expected_value = "[1+1,2+2]" },
+        .{ .expected_name = "y", .expected_value = "[1+1,2+2][0]" },
+        .{ .expected_name = "z", .expected_value = "x[1]" },
     };
 
-    assert(program.statements.len == tests.len);
+    try testing.expectEqual(tests.len, program.statements.len);
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
     }

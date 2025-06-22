@@ -174,6 +174,12 @@ const Compiler = struct {
 
                         _ = try self.emit(code.Opcode.opArray, &.{@intCast(a.elements.len)});
                     },
+                    .index_expression => |i| {
+                        try self.compile(ast.Node{ .expression = i.array });
+                        try self.compile(ast.Node{ .expression = i.index });
+
+                        _ = try self.emit(code.Opcode.opIndex, &.{});
+                    },
                     else => unreachable,
                 }
             },
@@ -668,7 +674,7 @@ test "compile variables" {
     }
 }
 
-test "compile arrays" {
+test "compile arrays and index operators" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -724,6 +730,33 @@ test "compile arrays" {
                 code.make(code.Opcode.opConstant, &.{3}, allocator),
                 code.make(code.Opcode.opConstant, &.{4}, allocator),
                 code.make(code.Opcode.opArray, &.{5}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "[0, 4][0];",
+            .expectedConstants = &.{ 0, 4, 0 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opArray, &.{2}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opIndex, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "[0, 4, 5][1 + 1];",
+            .expectedConstants = &.{ 0, 4, 5, 1, 1 },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opArray, &.{3}, allocator),
+                code.make(code.Opcode.opConstant, &.{3}, allocator),
+                code.make(code.Opcode.opConstant, &.{4}, allocator),
+                code.make(code.Opcode.opAdd, &.{}, allocator),
+                code.make(code.Opcode.opIndex, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
