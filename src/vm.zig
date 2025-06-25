@@ -247,6 +247,7 @@ const VM = struct {
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
                 },
+                else => unreachable,
             }
         }
     }

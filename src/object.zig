@@ -5,6 +5,7 @@ const mem = std.mem;
 
 pub const INT = "integer";
 pub const ARRAY = "array";
+pub const FN_INSTR = "fn_instructions";
 pub const STRING = "string";
 pub const BOOL = "boolean";
 pub const NULL = "null";
@@ -18,6 +19,7 @@ const ObjectError = error{
 
 pub const Object = union(enum) {
     integer: Integer,
+    fn_instrs: FnInstrs,
     string: String,
     boolean: Boolean,
     array: *Array,
@@ -75,6 +77,55 @@ pub const Integer = struct {
 
     fn add(self: Integer, to: Integer) ObjectError!Object {
         return Object{ .integer = .{ .value = self.value + to.value } };
+    }
+};
+
+pub const FnInstrs = struct {
+    value: []const u8,
+
+    fn typ(_: FnInstrs) []const u8 {
+        return FN_INSTR;
+    }
+
+    fn equal(self: FnInstrs, compared_to: Object) bool {
+        if (self.value.ptr == compared_to.fn_instrs.value.ptr and self.value.len == compared_to.fn_instrs.value.len) {
+            return true;
+        }
+
+        if (self.value.len != compared_to.fn_instrs.value.len) {
+            return false;
+        }
+
+        for (self.value, 0..) |instr, i| {
+            if (instr != compared_to.fn_instrs.value[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    fn inspect(self: FnInstrs, allocator: mem.Allocator) []const u8 {
+        if (self.value.len == 0) {
+            return "[]";
+        }
+
+        var fn_instrs = undefined;
+        for (self.value, 0..) |instr, i| {
+            if (i == 0) {
+                fn_instrs = std.fmt.allocPrint(allocator, "[{d}", .{instr}) catch unreachable;
+                continue;
+            }
+
+            fn_instrs = std.fmt.allocPrint(allocator, ", {d}", .{instr}) catch unreachable;
+        }
+
+        fn_instrs = std.fmt.allocPrint(allocator, "{s}]", .{fn_instrs}) catch unreachable;
+        return fn_instrs;
+    }
+
+    fn add(_: FnInstrs, _: Integer) ObjectError!Object {
+        return ObjectError.InvalidOperation;
     }
 };
 

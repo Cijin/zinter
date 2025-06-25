@@ -11,10 +11,17 @@ const ast = @import("ast.zig");
 const token = @import("token.zig");
 const stack_size = @import("machine.zig").stack_size;
 
+const scope_size = 128;
 const CompilerError = error{
     Oom,
     UndeclaredIdentifier,
     DuplicateIdentifier,
+};
+
+const Scope = struct {
+    instructions: ?[]u8,
+    prev_instr: ?EmittedInstruction,
+    last_instr: ?EmittedInstruction,
 };
 
 const EmittedInstruction = struct {
@@ -28,22 +35,20 @@ pub const ByteCode = struct {
 };
 
 // Todo: update exisiting global_var to symbol table
-// Unless you can get scope info from existing implementation
+// Unless you can get scopes info from existing implementation
 const symbol_table = struct {
-    scope: []const u8,
+    scopes: []const u8,
     symbols: [][]const u8,
-
-    fn add_symbol() void {}
-    fn get_symbol(_: []const u8) void {}
 };
 
 const Compiler = struct {
     instructions: ?[]u8,
     constants: ?[]object.Object,
     global_var: ?[][]const u8,
+    // Todo: expand array on overflow, which might be unlikely
+    scopes: [scope_size]Scope,
+    scope_idx: u64,
     allocator: mem.Allocator,
-    prev_instr: ?EmittedInstruction,
-    last_instr: ?EmittedInstruction,
 
     pub fn compile(self: *Compiler, node: ast.Node) CompilerError!void {
         switch (node) {
@@ -70,7 +75,10 @@ const Compiler = struct {
                         };
                         _ = try self.emit(code.Opcode.opSetGlobal, &.{global_idx});
                     },
-                    else => unreachable,
+                    .return_statement => |r| {
+                        try self.compile(ast.Node{ .expression = r.return_value });
+                        _ = try self.emit(code.Opcode.opReturn, &.{});
+                    },
                 }
             },
             .expression => |e| {
@@ -81,23 +89,23 @@ const Compiler = struct {
                         const jumpNtTruePos = try self.emit(code.Opcode.opJumpNtTrue, &.{stack_size});
 
                         try self.compile(ast.Node{ .statement = .{ .block_statement = if_e.consequence } });
-                        if (self.last_instr.?.opcode == code.Opcode.opPop) {
+                        if (self.scopes[self.scope_idx].last_instr.?.opcode == code.Opcode.opPop) {
                             self.remove_last_instr();
                         }
 
                         const jumpPos = try self.emit(code.Opcode.opJump, &.{stack_size});
-                        self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, self.instructions.?.len);
+                        self.replace_instr(code.Opcode.opJumpNtTrue, jumpNtTruePos, self.scopes[self.scope_idx].instructions.?.len);
 
                         if (if_e.alternative) |a| {
                             try self.compile(ast.Node{ .statement = .{ .block_statement = a } });
-                            if (self.last_instr.?.opcode == code.Opcode.opPop) {
+                            if (self.scopes[self.scope_idx].last_instr.?.opcode == code.Opcode.opPop) {
                                 self.remove_last_instr();
                             }
                         } else {
                             _ = try self.emit(code.Opcode.opNull, &.{});
                         }
 
-                        self.replace_instr(code.Opcode.opJump, jumpPos, self.instructions.?.len);
+                        self.replace_instr(code.Opcode.opJump, jumpPos, self.scopes[self.scope_idx].instructions.?.len);
                     },
                     .prefix_expression => |p| {
                         try self.compile(ast.Node{ .expression = p.right });
@@ -180,6 +188,16 @@ const Compiler = struct {
 
                         _ = try self.emit(code.Opcode.opIndex, &.{});
                     },
+                    .fn_literal => |fn_lit| {
+                        self.new_scope();
+                        try self.compile(ast.Node{ .statement = .{ .block_statement = fn_lit.body } });
+
+                        const instrs = self.exit_scope();
+                        const fn_instrs = object.Object{ .fn_instrs = .{ .value = instrs } };
+
+                        const idx = try self.add_constant(fn_instrs);
+                        _ = try self.emit(code.Opcode.opConstant, &.{idx});
+                    },
                     else => unreachable,
                 }
             },
@@ -239,7 +257,7 @@ const Compiler = struct {
     fn emit(self: *Compiler, operator: code.Opcode, operands: []const u64) CompilerError!u64 {
         var instructions = std.ArrayList(u8).init(self.allocator);
         var pos: u64 = 0;
-        if (self.instructions) |ins| {
+        if (self.scopes[self.scope_idx].instructions) |ins| {
             pos = ins.len;
             instructions.appendSlice(ins) catch {
                 return CompilerError.Oom;
@@ -260,32 +278,31 @@ const Compiler = struct {
             };
         }
 
-        self.instructions = instructions.items;
-
+        self.scopes[self.scope_idx].instructions = instructions.items;
         return pos;
     }
 
     pub fn byte_code(self: *Compiler) ByteCode {
         return ByteCode{
-            .instructions = self.instructions orelse &.{},
+            .instructions = self.scopes[self.scope_idx].instructions orelse &.{},
             .constants = self.constants orelse &.{},
         };
     }
 
     fn remove_last_instr(self: *Compiler) void {
-        const last_instr_pos = self.last_instr.?.pos;
-        const instructions_len: u64 = self.instructions.?.len;
+        const last_instr_pos = self.scopes[self.scope_idx].last_instr.?.pos;
+        const instructions_len: u64 = self.scopes[self.scope_idx].instructions.?.len;
         assert(last_instr_pos < instructions_len);
 
-        if (self.instructions) |s| {
-            self.instructions = s[0..last_instr_pos];
+        if (self.scopes[self.scope_idx].instructions) |s| {
+            self.scopes[self.scope_idx].instructions = s[0..last_instr_pos];
         }
     }
 
     fn replace_instr(self: *Compiler, opcode: code.Opcode, pos: u64, value: u64) void {
         const updated_instrs = code.make(opcode, &.{value}, self.allocator);
 
-        if (self.instructions) |ins| {
+        if (self.scopes[self.scope_idx].instructions) |ins| {
             assert(@intFromEnum(opcode) == ins[pos]);
 
             for (updated_instrs, pos..) |updated_instr, i| {
@@ -295,12 +312,34 @@ const Compiler = struct {
     }
 
     fn add_last_instr(self: *Compiler, opcode: code.Opcode, pos: u64) void {
+        assert(self.scope_idx >= 0);
+
         const last_instr = EmittedInstruction{ .opcode = opcode, .pos = pos };
 
-        if (self.last_instr) |i| {
-            self.prev_instr = i;
+        if (self.scopes[self.scope_idx].last_instr) |i| {
+            self.scopes[self.scope_idx].prev_instr = i;
         }
-        self.last_instr = last_instr;
+
+        self.scopes[self.scope_idx].last_instr = last_instr;
+    }
+
+    fn new_scope(self: *Compiler) void {
+        assert(self.scope_idx < scope_size);
+
+        self.scope_idx += 1;
+        self.scopes[self.scope_idx] = Scope{ .instructions = null, .prev_instr = null, .last_instr = null };
+    }
+
+    fn exit_scope(self: *Compiler) []u8 {
+        var instrs: []u8 = &.{};
+        if (self.scopes[self.scope_idx].instructions) |i| {
+            instrs = i;
+        }
+
+        assert(self.scope_idx > 0);
+        self.scope_idx -= 1;
+
+        return instrs;
     }
 };
 
@@ -312,8 +351,8 @@ pub fn New(allocator: mem.Allocator) !*Compiler {
         .instructions = null,
         .constants = null,
         .global_var = null,
-        .prev_instr = null,
-        .last_instr = null,
+        .scopes = .{Scope{ .instructions = null, .prev_instr = null, .last_instr = null }} ** 128,
+        .scope_idx = 0,
     };
 
     return compiler;
@@ -784,6 +823,126 @@ test "compile arrays and index operators" {
         for (got.constants, 0..) |constant, i| {
             const int: object.Integer = constant.integer;
             try testing.expectEqual(t.expectedConstants[i], int.value);
+        }
+    }
+}
+
+test "compiler scopes" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const input = "";
+    const l = try lexer.New(allocator, input);
+    const p = try parser.New(allocator, l);
+    const program = try p.parse_program();
+
+    var c = try New(allocator);
+    try c.compile(ast.Node{ .program = program });
+
+    _ = try c.emit(code.Opcode.opAdd, &.{});
+    try testing.expectEqualSlices(
+        u8,
+        code.make(code.Opcode.opAdd, &.{}, allocator),
+        c.byte_code().instructions,
+    );
+
+    c.new_scope();
+    _ = try c.emit(code.Opcode.opSub, &.{});
+    try testing.expectEqualSlices(
+        u8,
+        code.make(code.Opcode.opSub, &.{}, allocator),
+        c.byte_code().instructions,
+    );
+
+    const prev_scope_instrs = c.exit_scope();
+    try testing.expectEqualSlices(
+        u8,
+        code.make(code.Opcode.opSub, &.{}, allocator),
+        prev_scope_instrs,
+    );
+
+    try testing.expectEqualSlices(
+        u8,
+        code.make(code.Opcode.opAdd, &.{}, allocator),
+        c.byte_code().instructions,
+    );
+}
+
+test "compile fn declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedConstants: []const object.Object,
+        expectedInstructions: []const []u8,
+    }{
+        .{
+            .input = "fn() { return 5 };",
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opConstant, &.{0}, allocator),
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "fn() { return 5 + 5; };",
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opConstant, &.{0}, allocator),
+                            code.make(code.Opcode.opConstant, &.{1}, allocator),
+                            code.make(code.Opcode.opAdd, &.{}, allocator),
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const got = c.byte_code();
+
+        var concatted_instr = std.ArrayList(u8).init(allocator);
+        for (t.expectedInstructions) |insts| {
+            for (insts) |inst| {
+                try concatted_instr.append(inst);
+            }
+        }
+
+        try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
+        for (t.expectedConstants, 0..) |constant, i| {
+            try testing.expectEqual(true, constant.equal(got.constants[i]));
         }
     }
 }
