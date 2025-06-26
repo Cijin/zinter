@@ -70,9 +70,7 @@ const Compiler = struct {
                     },
                     .let_statement => |l| {
                         try self.compile(ast.Node{ .expression = l.value });
-                        const global_idx = self.add_global_variable(l.name.value) catch {
-                            return CompilerError.Oom;
-                        };
+                        const global_idx = try self.add_global_variable(l.name.value);
                         _ = try self.emit(code.Opcode.opSetGlobal, &.{global_idx});
                     },
                     .return_statement => |r| {
@@ -197,6 +195,10 @@ const Compiler = struct {
 
                         const idx = try self.add_constant(fn_instrs);
                         _ = try self.emit(code.Opcode.opConstant, &.{idx});
+                    },
+                    .call_expression => |ce| {
+                        try self.compile(ast.Node{ .expression = ce.function });
+                        _ = try self.emit(code.Opcode.opCall, &.{});
                     },
                     else => unreachable,
                 }
@@ -883,19 +885,46 @@ test "compile fn declarations" {
             .input = "fn() { return 5 };",
             .expectedConstants = &.{
                 object.Object{ .integer = .{ .value = 5 } },
-                object.Object{ .fn_instrs = .{
-                    .value = try mem.concat(
-                        allocator,
-                        u8,
-                        &[_][]const u8{
-                            code.make(code.Opcode.opConstant, &.{0}, allocator),
-                            code.make(code.Opcode.opReturn, &.{}, allocator),
-                        },
-                    ),
-                } },
+                object.Object{
+                    .fn_instrs = .{
+                        .value = try mem.concat(
+                            allocator,
+                            u8,
+                            &[_][]const u8{
+                                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                                code.make(code.Opcode.opReturn, &.{}, allocator),
+                            },
+                        ),
+                    },
+                },
             },
             .expectedInstructions = &.{
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "fn() { 5 + 5; };",
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{
+                    .fn_instrs = .{
+                        .value = try mem.concat(
+                            allocator,
+                            u8,
+                            &[_][]const u8{
+                                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                                code.make(code.Opcode.opAdd, &.{}, allocator),
+                                code.make(code.Opcode.opPop, &.{}, allocator),
+                            },
+                        ),
+                    },
+                },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
@@ -919,6 +948,53 @@ test "compile fn declarations" {
             },
             .expectedInstructions = &.{
                 code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "fn() { return 5 + 5; }();",
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opConstant, &.{0}, allocator),
+                            code.make(code.Opcode.opConstant, &.{1}, allocator),
+                            code.make(code.Opcode.opAdd, &.{}, allocator),
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "let x = fn() { return 5; }; x();",
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opConstant, &.{0}, allocator),
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opGetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },

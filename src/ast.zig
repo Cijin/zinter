@@ -243,11 +243,16 @@ pub const FnLiteral = struct {
 
 pub const CallExpression = struct {
     token: token.Token,
-    function: Identifier,
+    function: Expression,
     arguments: []Expression,
 
     pub fn token_literal(self: CallExpression, allocator: mem.Allocator) []const u8 {
-        var call_expression = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.function.token_literal(allocator), self.token.literal }) catch unreachable;
+        var call_expression: []u8 = std.fmt.allocPrint(allocator, "{s}{s}", .{ self.function.token_literal(allocator), self.token.literal }) catch unreachable;
+
+        if (self.arguments.len == 0) {
+            call_expression = std.fmt.allocPrint(allocator, "{s})", .{call_expression}) catch unreachable;
+        }
+
         for (self.arguments, 0..) |e, i| {
             if (i + 1 == self.arguments.len) {
                 call_expression = std.fmt.allocPrint(allocator, "{s}{s})", .{ call_expression, e.token_literal(allocator) }) catch unreachable;

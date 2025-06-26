@@ -342,10 +342,9 @@ const Parser = struct {
             return ParserError.OutOfMemory;
         };
 
-        const identifier: ast.Identifier = left.identifier;
         call_expression.* = ast.CallExpression{
             .token = self.cur_token,
-            .function = identifier,
+            .function = left,
             .arguments = undefined,
         };
 
@@ -851,6 +850,31 @@ test "fn call expression" {
     assert(program.statements.len == tests.len);
     for (program.statements, 0..) |stmt, i| {
         try test_let_statement(allocator, stmt, tests[i].expected_name, tests[i].expected_value);
+    }
+}
+
+test "anonymous fn call expression" {
+    const input =
+        \\ fn() { return 5}();
+        \\ fn(x, y){return x + y}(5,5);
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const l = try lexer.New(allocator, input);
+    const p = try New(allocator, l);
+    const program = try p.parse_program();
+
+    const tests = [_]struct { expected_value: []const u8 }{
+        .{ .expected_value = "fn(){return 5}()" },
+        .{ .expected_value = "fn(x, y){return x+y}(5,5)" },
+    };
+
+    assert(program.statements.len == tests.len);
+    for (program.statements, 0..) |stmt, i| {
+        try testing.expectEqualStrings(tests[i].expected_value, stmt.token_literal(allocator));
     }
 }
 
