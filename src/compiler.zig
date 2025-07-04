@@ -251,8 +251,8 @@ const Compiler = struct {
         constants.append(obj) catch {
             return CompilerError.Oom;
         };
-        self.constants = constants.items;
 
+        self.constants = constants.items;
         return constants.items.len - 1;
     }
 

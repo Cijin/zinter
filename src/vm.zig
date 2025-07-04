@@ -9,7 +9,9 @@ const ast = @import("ast.zig");
 const object = @import("object.zig");
 const compiler = @import("compiler.zig");
 const code = @import("code.zig");
+
 const stack_size = @import("machine.zig").stack_size;
+const max_frames = @import("machine.zig").max_frames;
 
 const RuntimeError = error{
     StackOverflow,
@@ -22,10 +24,32 @@ const RuntimeError = error{
     Oom,
 };
 
+const Frame = struct {
+    ip: i64,
+    instr_obj: object.FnInstrs,
+
+    fn instrs(self: *Frame) []const u8 {
+        return self.instr_obj.value;
+    }
+};
+
+fn new_frame(instrs: []const u8, allocator: mem.Allocator) *Frame {
+    const allocated_instrs = allocator.alloc(u8, instrs.len) catch unreachable;
+    @memcpy(allocated_instrs, instrs);
+
+    const frame = &Frame{
+        .ip = 0,
+        .instr_obj = object.FnInstrs{ .value = allocated_instrs },
+    };
+
+    return @constCast(frame);
+}
+
 const VM = struct {
     constants: []object.Object,
     allocator: mem.Allocator,
-    instructions: []u8,
+    frames: [max_frames]*Frame,
+    frame_idx: u64,
     stack: [stack_size]object.Object,
     sp: u32,
     globals: [stack_size]object.Object,
@@ -41,16 +65,24 @@ const VM = struct {
     // Play
     // Control rate of execution
     pub fn run(self: *VM) RuntimeError!void {
-        var instr_idx: u32 = 0;
-        while (instr_idx < self.instructions.len) : (instr_idx += 1) {
-            const instr = self.instructions[instr_idx];
+        while (self.current_frame().ip < self.current_frame().instrs().len) : (self.current_frame().ip += 1) {
+            assert(self.current_frame().ip >= 0);
+
+            std.debug.print("{d}\n", .{self.frame_idx});
+            const frame = self.current_frame();
+            const ip: u64 = @intCast(frame.ip);
+            std.debug.print("{d}\n", .{ip});
+            const instrs = frame.instrs();
+            std.debug.print("{any}\n", .{instrs});
+            const instr = instrs[ip];
+
             const opcode: code.Opcode = @enumFromInt(instr);
             switch (opcode) {
                 .opConstant => {
-                    var const_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    var const_idx: u16 = @intCast(instrs[ip + 1]);
                     const_idx <<= 8;
-                    const_idx |= @intCast(self.instructions[instr_idx + 2]);
-                    instr_idx += 2;
+                    const_idx |= @intCast(instrs[ip + 2]);
+                    frame.ip += 2;
 
                     assert(const_idx < self.constants.len);
                     try self.push(self.constants[const_idx]);
@@ -170,10 +202,10 @@ const VM = struct {
                     _ = self.pop();
                 },
                 .opJumpNtTrue => {
-                    var jump_pos: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    var jump_pos: u16 = @intCast(instrs[ip + 1]);
                     jump_pos <<= 8;
-                    jump_pos |= @intCast(self.instructions[instr_idx + 2]);
-                    instr_idx += 2;
+                    jump_pos |= @intCast(instrs[ip + 2]);
+                    frame.ip += 2;
 
                     const obj: object.Object = self.pop();
                     if (!mem.eql(u8, obj.typ(), object.BOOL)) {
@@ -181,39 +213,39 @@ const VM = struct {
                     }
 
                     if (!obj.equal(object.TRUE)) {
-                        assert(jump_pos <= self.instructions.len);
-                        instr_idx = jump_pos - 1;
+                        assert(jump_pos <= instrs.len);
+                        frame.ip = jump_pos - 1;
                     }
                 },
                 .opJump => {
-                    var jump_pos: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    var jump_pos: u16 = @intCast(instrs[ip + 1]);
                     jump_pos <<= 8;
-                    jump_pos |= @intCast(self.instructions[instr_idx + 2]);
+                    jump_pos |= @intCast(instrs[ip + 2]);
 
-                    assert(jump_pos <= self.instructions.len);
-                    instr_idx = jump_pos - 1;
+                    assert(jump_pos <= instrs.len);
+                    frame.ip = jump_pos - 1;
                 },
                 .opSetGlobal => {
-                    var ident_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    var ident_idx: u16 = @intCast(instrs[ip + 1]);
                     ident_idx <<= 8;
-                    ident_idx |= @intCast(self.instructions[instr_idx + 2]);
-                    instr_idx += 2;
+                    ident_idx |= @intCast(instrs[ip + 2]);
+                    frame.ip += 2;
 
                     self.globals[ident_idx] = self.pop();
                 },
                 .opGetGlobal => {
-                    var ident_idx: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    var ident_idx: u16 = @intCast(instrs[ip + 1]);
                     ident_idx <<= 8;
-                    ident_idx |= @intCast(self.instructions[instr_idx + 2]);
-                    instr_idx += 2;
+                    ident_idx |= @intCast(instrs[ip + 2]);
+                    frame.ip += 2;
 
                     try self.push(self.globals[ident_idx]);
                 },
                 .opArray => {
-                    var array_len: u16 = @intCast(self.instructions[instr_idx + 1]);
+                    var array_len: u16 = @intCast(instrs[ip + 1]);
                     array_len <<= 8;
-                    array_len |= @intCast(self.instructions[instr_idx + 2]);
-                    instr_idx += 2;
+                    array_len |= @intCast(instrs[ip + 2]);
+                    frame.ip += 2;
 
                     const array = self.allocator.create(object.Array) catch unreachable;
                     array.* = object.Array{
@@ -244,12 +276,42 @@ const VM = struct {
 
                     try self.push(arr.array.value[@intCast(idx.integer.value)]);
                 },
+                .opCall => {
+                    var obj = self.stack[self.sp - 1];
+                    assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
+
+                    self.add_frame(obj.fn_instrs.value);
+                    self.current_frame().ip = -1;
+                },
+                .opReturn => {
+                    self.remove_frame();
+
+                    const return_val = self.pop();
+
+                    const obj = self.pop();
+                    assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
+
+                    try self.push(return_val);
+                },
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
                 },
-                else => unreachable,
             }
         }
+    }
+
+    fn current_frame(self: *VM) *Frame {
+        return self.frames[self.frame_idx];
+    }
+
+    fn add_frame(self: *VM, instrs: []const u8) void {
+        self.frame_idx += 1;
+        self.frames[self.frame_idx] = new_frame(instrs, self.allocator);
+    }
+
+    fn remove_frame(self: *VM) void {
+        assert(self.frame_idx >= 1);
+        self.frame_idx -= 1;
     }
 
     fn pop(self: *VM) object.Object {
@@ -289,12 +351,14 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     vm.* = VM{
         .constants = b.constants,
         .allocator = allocator,
-        .instructions = b.instructions,
+        .frames = undefined,
+        .frame_idx = 0,
         .stack = undefined,
         .globals = undefined,
         .sp = 0,
     };
 
+    vm.frames[0] = new_frame(b.instructions, allocator);
     return vm;
 }
 
@@ -662,5 +726,38 @@ test "virtual machine array expressions" {
         const last_popped = vm.last_popped();
         try testing.expectEqualStrings(object.ARRAY, last_popped.typ());
         try testing.expectEqualSlices(object.Object, expectedInts[0..t.expectedInts.len], @constCast(last_popped.array.*.value));
+    }
+}
+
+test "virtual machine fn calls" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const tests = [_]struct {
+        input: []const u8,
+        expectedObj: object.Object,
+    }{
+        .{
+            .input = "let x = fn() { return 5; }; x();",
+            .expectedObj = object.Object{ .integer = .{ .value = 5 } },
+        },
+        .{
+            .input = "let x = fn() { return 10 + 5; }; x();",
+            .expectedObj = object.Object{ .integer = .{ .value = 15 } },
+        },
+    };
+
+    for (tests) |t| {
+        const l = try lexer.New(allocator, t.input);
+        const p = try parser.New(allocator, l);
+        const program = try p.parse_program();
+
+        var c = try compiler.New(allocator);
+        try c.compile(ast.Node{ .program = program });
+        const vm = try New(c.byte_code(), allocator);
+        try vm.run();
+
+        try testing.expectEqual(t.expectedObj, vm.last_popped());
     }
 }

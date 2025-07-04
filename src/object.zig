@@ -110,7 +110,7 @@ pub const FnInstrs = struct {
             return "[]";
         }
 
-        var fn_instrs = undefined;
+        var fn_instrs: []const u8 = undefined;
         for (self.value, 0..) |instr, i| {
             if (i == 0) {
                 fn_instrs = std.fmt.allocPrint(allocator, "[{d}", .{instr}) catch unreachable;
@@ -158,14 +158,14 @@ pub const Array = struct {
             return "[]";
         }
 
-        var aol = undefined;
+        var aol: []const u8 = undefined;
         for (self.value, 0..) |a, i| {
             if (i == 0) {
-                aol = std.fmt.allocPrint(allocator, "[{s}", .{a.value}) catch unreachable;
+                aol = std.fmt.allocPrint(allocator, "[{s}", .{a.inspect(allocator)}) catch unreachable;
                 continue;
             }
 
-            aol = std.fmt.allocPrint(allocator, ", {s}", .{a.value}) catch unreachable;
+            aol = std.fmt.allocPrint(allocator, ", {s}", .{a.inspect(allocator)}) catch unreachable;
         }
 
         aol = std.fmt.allocPrint(allocator, "{s}]", .{aol}) catch unreachable;
