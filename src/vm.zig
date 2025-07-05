@@ -33,16 +33,14 @@ const Frame = struct {
     }
 };
 
-fn new_frame(instrs: []const u8, allocator: mem.Allocator) *Frame {
-    const allocated_instrs = allocator.alloc(u8, instrs.len) catch unreachable;
-    @memcpy(allocated_instrs, instrs);
-
-    const frame = &Frame{
+fn new_frame(fn_instrs: object.FnInstrs, allocator: mem.Allocator) *Frame {
+    const frame = allocator.create(Frame) catch unreachable;
+    frame.* = Frame{
         .ip = 0,
-        .instr_obj = object.FnInstrs{ .value = allocated_instrs },
+        .instr_obj = fn_instrs,
     };
 
-    return @constCast(frame);
+    return frame;
 }
 
 const VM = struct {
@@ -68,12 +66,9 @@ const VM = struct {
         while (self.current_frame().ip < self.current_frame().instrs().len) : (self.current_frame().ip += 1) {
             assert(self.current_frame().ip >= 0);
 
-            std.debug.print("{d}\n", .{self.frame_idx});
             const frame = self.current_frame();
             const ip: u64 = @intCast(frame.ip);
-            std.debug.print("{d}\n", .{ip});
             const instrs = frame.instrs();
-            std.debug.print("{any}\n", .{instrs});
             const instr = instrs[ip];
 
             const opcode: code.Opcode = @enumFromInt(instr);
@@ -280,7 +275,7 @@ const VM = struct {
                     var obj = self.stack[self.sp - 1];
                     assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
 
-                    self.add_frame(obj.fn_instrs.value);
+                    self.add_frame(obj.fn_instrs);
                     self.current_frame().ip = -1;
                 },
                 .opReturn => {
@@ -304,9 +299,9 @@ const VM = struct {
         return self.frames[self.frame_idx];
     }
 
-    fn add_frame(self: *VM, instrs: []const u8) void {
+    fn add_frame(self: *VM, fn_instrs: object.FnInstrs) void {
         self.frame_idx += 1;
-        self.frames[self.frame_idx] = new_frame(instrs, self.allocator);
+        self.frames[self.frame_idx] = new_frame(fn_instrs, self.allocator);
     }
 
     fn remove_frame(self: *VM) void {
@@ -358,7 +353,8 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
         .sp = 0,
     };
 
-    vm.frames[0] = new_frame(b.instructions, allocator);
+    const program_instrs = object.FnInstrs{ .value = b.instructions };
+    vm.frames[0] = new_frame(program_instrs, allocator);
     return vm;
 }
 
