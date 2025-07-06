@@ -300,6 +300,9 @@ const Parser = struct {
         try self.expect_peek(token.TokenType.Lbrace);
         fn_literal.body = try self.parse_block_statements();
 
+        // Todo: could check if there is a return statement
+        // if not implicitly return
+
         return ast.Expression{ .fn_literal = fn_literal };
     }
 

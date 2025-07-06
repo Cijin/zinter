@@ -104,8 +104,11 @@ pub const BlockStatement = struct {
     pub fn token_literal(self: BlockStatement, allocator: mem.Allocator) []const u8 {
         var block_statement_literal: []u8 = "";
         for (self.statements) |stmt| {
-            // Todo: print multiple lines prettier? \n maybe
-            block_statement_literal = std.fmt.allocPrint(allocator, "{s}{s}", .{ block_statement_literal, stmt.token_literal(allocator) }) catch unreachable;
+            block_statement_literal = std.fmt.allocPrint(
+                allocator,
+                "{s}{s}",
+                .{ block_statement_literal, stmt.token_literal(allocator) },
+            ) catch unreachable;
         }
 
         return block_statement_literal;

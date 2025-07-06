@@ -190,6 +190,17 @@ const Compiler = struct {
                         self.new_scope();
                         try self.compile(ast.Node{ .statement = .{ .block_statement = fn_lit.body } });
 
+                        // handles cases where either function body is empty
+                        // or there are no return statements
+                        if (self.scopes[self.scope_idx].last_instr) |li| {
+                            if (li.opcode != code.Opcode.opReturn) {
+                                if (li.opcode == code.Opcode.opPop) {
+                                    self.remove_last_instr();
+                                }
+                                _ = try self.emit(code.Opcode.opReturn, &.{});
+                            }
+                        }
+
                         const instrs = self.exit_scope();
                         const fn_instrs = object.Object{ .fn_instrs = .{ .value = instrs } };
 
@@ -917,7 +928,7 @@ test "compile fn declarations" {
                                 code.make(code.Opcode.opConstant, &.{0}, allocator),
                                 code.make(code.Opcode.opConstant, &.{1}, allocator),
                                 code.make(code.Opcode.opAdd, &.{}, allocator),
-                                code.make(code.Opcode.opPop, &.{}, allocator),
+                                code.make(code.Opcode.opReturn, &.{}, allocator),
                             },
                         ),
                     },

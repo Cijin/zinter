@@ -33,9 +33,8 @@ const Frame = struct {
     }
 };
 
-fn new_frame(fn_instrs: object.FnInstrs, allocator: mem.Allocator) *Frame {
-    const frame = allocator.create(Frame) catch unreachable;
-    frame.* = Frame{
+fn new_frame(fn_instrs: object.FnInstrs) Frame {
+    const frame = Frame{
         .ip = 0,
         .instr_obj = fn_instrs,
     };
@@ -46,7 +45,7 @@ fn new_frame(fn_instrs: object.FnInstrs, allocator: mem.Allocator) *Frame {
 const VM = struct {
     constants: []object.Object,
     allocator: mem.Allocator,
-    frames: [max_frames]*Frame,
+    frames: [max_frames]Frame,
     frame_idx: u64,
     stack: [stack_size]object.Object,
     sp: u32,
@@ -281,6 +280,9 @@ const VM = struct {
                 .opReturn => {
                     self.remove_frame();
 
+                    // Todo: check failing fn test case
+                    // there is a possibility that there is nothing to pop
+                    // except fn_instr
                     const return_val = self.pop();
 
                     const obj = self.pop();
@@ -296,12 +298,12 @@ const VM = struct {
     }
 
     fn current_frame(self: *VM) *Frame {
-        return self.frames[self.frame_idx];
+        return &self.frames[self.frame_idx];
     }
 
     fn add_frame(self: *VM, fn_instrs: object.FnInstrs) void {
         self.frame_idx += 1;
-        self.frames[self.frame_idx] = new_frame(fn_instrs, self.allocator);
+        self.frames[self.frame_idx] = new_frame(fn_instrs);
     }
 
     fn remove_frame(self: *VM) void {
@@ -354,7 +356,7 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     };
 
     const program_instrs = object.FnInstrs{ .value = b.instructions };
-    vm.frames[0] = new_frame(program_instrs, allocator);
+    vm.frames[0] = new_frame(program_instrs);
     return vm;
 }
 
@@ -741,6 +743,36 @@ test "virtual machine fn calls" {
         .{
             .input = "let x = fn() { return 10 + 5; }; x();",
             .expectedObj = object.Object{ .integer = .{ .value = 15 } },
+        },
+        .{
+            .input =
+            \\ let one = fn() { return 1; };
+            \\ let two = fn() { return 2; };
+            \\ one() + two()
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 3 } },
+        },
+        .{
+            .input =
+            \\ let one = fn() { return 1; };
+            \\ let two = fn() { return 2; };
+            \\ one() + two()
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 3 } },
+        },
+        .{
+            .input =
+            \\ let earlyExit = fn() { return 99; 100; };
+            \\ earlyExit();
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 99 } },
+        },
+        .{
+            .input =
+            \\ let noReturn = fn() { };
+            \\ noReturn();
+            ,
+            .expectedObj = object.Object{ .null = .{} },
         },
     };
 
