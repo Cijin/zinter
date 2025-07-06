@@ -111,10 +111,13 @@ const Parser = struct {
     fn parse_return_statement(self: *Parser) ParserError!ast.ReturnStatement {
         var return_stmt = ast.ReturnStatement{
             .token = self.cur_token,
-            .return_value = undefined,
+            .return_value = null,
         };
 
         try self.next_token();
+        if (self.cur_token_is(token.TokenType.Semicolon)) {
+            return return_stmt;
+        }
 
         const p = self.cur_precedence();
         return_stmt.return_value = try self.parse_expression(p);
@@ -554,7 +557,9 @@ fn test_return_statement(allocator: mem.Allocator, stmt: ast.Statement, expected
     assert(@as(std.meta.Tag(ast.Statement), stmt) == .return_statement);
 
     try testing.expectEqualStrings(expected_return_stmt, stmt.return_statement.token_literal(allocator));
-    try testing.expectEqualStrings(expected_return_value, stmt.return_statement.return_value.token_literal(allocator));
+    if (stmt.return_statement.return_value) |v| {
+        try testing.expectEqualStrings(expected_return_value, v.token_literal(allocator));
+    }
 }
 
 fn test_fn_literal_params(allocator: mem.Allocator, fn_literal: ast.FnLiteral, expected_params: [][]const u8) !void {

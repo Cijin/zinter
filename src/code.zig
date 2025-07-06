@@ -26,6 +26,7 @@ pub const Opcode = enum {
     opArray,
     opIndex,
     opCall,
+    opReturnValue,
     opReturn,
 
     pub fn lookup_definition(self: Opcode) definition {
@@ -116,6 +117,10 @@ pub const Opcode = enum {
             },
             .opCall => definition{
                 .name = "opCall",
+                .operandWidth = &.{},
+            },
+            .opReturnValue => definition{
+                .name = "opReturnValue",
                 .operandWidth = &.{},
             },
             .opReturn => definition{

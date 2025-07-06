@@ -277,18 +277,23 @@ const VM = struct {
                     self.add_frame(obj.fn_instrs);
                     self.current_frame().ip = -1;
                 },
-                .opReturn => {
+                .opReturnValue => {
                     self.remove_frame();
 
-                    // Todo: check failing fn test case
-                    // there is a possibility that there is nothing to pop
-                    // except fn_instr
                     const return_val = self.pop();
 
                     const obj = self.pop();
                     assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
 
                     try self.push(return_val);
+                },
+                .opReturn => {
+                    self.remove_frame();
+
+                    const obj = self.pop();
+                    assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
+
+                    try self.push(object.Object{ .null = .{} });
                 },
                 .opNull => {
                     try self.push(object.Object{ .null = .{} });
@@ -715,7 +720,6 @@ test "virtual machine array expressions" {
         const vm = try New(c.byte_code(), allocator);
         try vm.run();
 
-        // Todo: works for now, not sure about later
         var expectedInts: [10]object.Object = undefined;
         for (t.expectedInts, 0..) |int, i| {
             expectedInts[i] = object.Object{ .integer = .{ .value = int } };
@@ -769,7 +773,14 @@ test "virtual machine fn calls" {
         },
         .{
             .input =
-            \\ let noReturn = fn() { };
+            \\ let noReturn = fn() { return; };
+            \\ noReturn();
+            ,
+            .expectedObj = object.Object{ .null = .{} },
+        },
+        .{
+            .input =
+            \\ let noReturn = fn() {};
             \\ noReturn();
             ,
             .expectedObj = object.Object{ .null = .{} },

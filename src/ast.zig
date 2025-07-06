@@ -40,7 +40,6 @@ pub const Expression = union(enum) {
     if_expression: *IfExpression,
     fn_literal: FnLiteral,
     call_expression: *CallExpression,
-    nil_expression: NilExpression,
 
     pub fn token_literal(self: Expression, allocator: mem.Allocator) []const u8 {
         switch (self) {
@@ -78,13 +77,17 @@ pub const LetStatement = struct {
 
 pub const ReturnStatement = struct {
     token: token.Token,
-    return_value: Expression,
+    return_value: ?Expression,
 
     pub fn token_literal(self: ReturnStatement, allocator: mem.Allocator) []const u8 {
-        return std.fmt.allocPrint(allocator, "{s} {s}", .{
-            self.token.literal,
-            self.return_value.token_literal(allocator),
-        }) catch unreachable;
+        if (self.return_value) |v| {
+            return std.fmt.allocPrint(allocator, "{s} {s}", .{
+                self.token.literal,
+                v.token_literal(allocator),
+            }) catch unreachable;
+        }
+
+        return self.token.literal;
     }
 };
 
@@ -275,13 +278,5 @@ pub const IndexExpression = struct {
 
     pub fn token_literal(self: IndexExpression, allocator: mem.Allocator) []const u8 {
         return std.fmt.allocPrint(allocator, "{s}[{s}]", .{ self.array.token_literal(allocator), self.index.token_literal(allocator) }) catch unreachable;
-    }
-};
-
-pub const NilExpression = struct {
-    token: token.Token,
-
-    pub fn token_literal(_: NilExpression, _: mem.Allocator) []const u8 {
-        return "you messed up, son";
     }
 };

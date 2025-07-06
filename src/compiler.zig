@@ -74,8 +74,12 @@ const Compiler = struct {
                         _ = try self.emit(code.Opcode.opSetGlobal, &.{global_idx});
                     },
                     .return_statement => |r| {
-                        try self.compile(ast.Node{ .expression = r.return_value });
-                        _ = try self.emit(code.Opcode.opReturn, &.{});
+                        if (r.return_value) |v| {
+                            try self.compile(ast.Node{ .expression = v });
+                            _ = try self.emit(code.Opcode.opReturnValue, &.{});
+                        } else {
+                            _ = try self.emit(code.Opcode.opReturn, &.{});
+                        }
                     },
                 }
             },
@@ -190,15 +194,16 @@ const Compiler = struct {
                         self.new_scope();
                         try self.compile(ast.Node{ .statement = .{ .block_statement = fn_lit.body } });
 
-                        // handles cases where either function body is empty
-                        // or there are no return statements
+                        // handles cases where either function body is empty or implicit returns
                         if (self.scopes[self.scope_idx].last_instr) |li| {
-                            if (li.opcode != code.Opcode.opReturn) {
+                            if (li.opcode != .opReturnValue and li.opcode != .opReturn) {
                                 if (li.opcode == code.Opcode.opPop) {
                                     self.remove_last_instr();
                                 }
                                 _ = try self.emit(code.Opcode.opReturn, &.{});
                             }
+                        } else {
+                            _ = try self.emit(code.Opcode.opReturn, &.{});
                         }
 
                         const instrs = self.exit_scope();
@@ -211,7 +216,6 @@ const Compiler = struct {
                         try self.compile(ast.Node{ .expression = ce.function });
                         _ = try self.emit(code.Opcode.opCall, &.{});
                     },
-                    else => unreachable,
                 }
             },
         }
@@ -903,7 +907,7 @@ test "compile fn declarations" {
                             u8,
                             &[_][]const u8{
                                 code.make(code.Opcode.opConstant, &.{0}, allocator),
-                                code.make(code.Opcode.opReturn, &.{}, allocator),
+                                code.make(code.Opcode.opReturnValue, &.{}, allocator),
                             },
                         ),
                     },
@@ -952,7 +956,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opConstant, &.{0}, allocator),
                             code.make(code.Opcode.opConstant, &.{1}, allocator),
                             code.make(code.Opcode.opAdd, &.{}, allocator),
-                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                            code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
                 } },
@@ -975,7 +979,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opConstant, &.{0}, allocator),
                             code.make(code.Opcode.opConstant, &.{1}, allocator),
                             code.make(code.Opcode.opAdd, &.{}, allocator),
-                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                            code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
                 } },
@@ -996,7 +1000,7 @@ test "compile fn declarations" {
                         u8,
                         &[_][]const u8{
                             code.make(code.Opcode.opConstant, &.{0}, allocator),
-                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                            code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
                 } },
@@ -1005,6 +1009,44 @@ test "compile fn declarations" {
                 code.make(code.Opcode.opConstant, &.{1}, allocator),
                 code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
                 code.make(code.Opcode.opGetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "fn() { return; }();",
+            .expectedConstants = &.{
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input = "fn() {}();",
+            .expectedConstants = &.{
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
                 code.make(code.Opcode.opCall, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
