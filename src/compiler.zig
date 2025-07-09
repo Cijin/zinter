@@ -12,6 +12,9 @@ const token = @import("token.zig");
 const stack_size = @import("machine.zig").stack_size;
 
 const scope_size = 128;
+const local_scope = "Local_";
+const global_scope = "Global";
+
 const CompilerError = error{
     Oom,
     UndeclaredIdentifier,
@@ -34,17 +37,67 @@ pub const ByteCode = struct {
     constants: []object.Object,
 };
 
-// Todo: update exisiting global_var to symbol table
-// Unless you can get scopes info from existing implementation
-const symbol_table = struct {
-    scopes: []const u8,
-    symbols: [][]const u8,
+const Symbol = struct {
+    idx: u64,
+    name: []const u8,
+    scope: []const u8,
 };
+
+const SymbolTable = struct {
+    prev: ?*SymbolTable,
+    symbols: std.StringHashMap(Symbol),
+    symbol_count: u64,
+
+    pub fn get_symbol(self: *SymbolTable, k: []const u8) ?Symbol {
+        if (self.symbols.get(k)) |v| {
+            return v;
+        }
+
+        if (self.prev) |prev| {
+            return prev.get_symbol(k);
+        }
+
+        return null;
+    }
+
+    pub fn add_symbol(self: *SymbolTable, k: []const u8) CompilerError!u64 {
+        if (self.symbols.get(k)) |_| {
+            return CompilerError.DuplicateIdentifier;
+        }
+
+        var scope = global_scope;
+        if (self.prev) |_| {
+            scope = local_scope;
+        }
+
+        const symbol = Symbol{ .name = k, .idx = self.symbol_count, .scope = scope };
+        self.symbols.put(k, symbol) catch unreachable;
+        self.symbol_count += 1;
+
+        return symbol.idx;
+    }
+};
+
+fn new_symbol_table(enclosing_scope: ?*SymbolTable, allocator: mem.Allocator) *SymbolTable {
+    var symbol_table = allocator.create(SymbolTable) catch unreachable;
+    symbol_table.* = SymbolTable{
+        .prev = null,
+        .symbols = std.StringHashMap(Symbol).init(allocator),
+        .symbol_count = 0,
+    };
+
+    if (enclosing_scope) |scope| {
+        symbol_table.prev = scope;
+    }
+
+    return symbol_table;
+}
 
 const Compiler = struct {
     instructions: ?[]u8,
     constants: ?[]object.Object,
     global_var: ?[][]const u8,
+    symbol_table: *SymbolTable,
     // Todo: expand array on overflow, which might be unlikely
     scopes: [scope_size]Scope,
     scope_idx: u64,
@@ -70,6 +123,9 @@ const Compiler = struct {
                     },
                     .let_statement => |l| {
                         try self.compile(ast.Node{ .expression = l.value });
+                        // Todo:
+                        // 2 => local_symbol_table
+                        // current_symbol_table[2]
                         const global_idx = try self.add_global_variable(l.name.value);
                         _ = try self.emit(code.Opcode.opSetGlobal, &.{global_idx});
                     },
@@ -368,6 +424,7 @@ pub fn New(allocator: mem.Allocator) !*Compiler {
         .instructions = null,
         .constants = null,
         .global_var = null,
+        .symbol_table = new_symbol_table(null, allocator),
         .scopes = .{Scope{ .instructions = null, .prev_instr = null, .last_instr = null }} ** 128,
         .scope_idx = 0,
     };
@@ -1051,6 +1108,32 @@ test "compile fn declarations" {
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },
+        .{
+            .input =
+            \\ let x = 5;
+            \\ fn() { return x;}();
+            ,
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 5 } },
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opGetGlobal, &.{0}, allocator),
+                            code.make(code.Opcode.opReturnValue, &.{}, allocator),
+                        },
+                    ),
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
     };
 
     for (tests) |t| {
@@ -1072,6 +1155,89 @@ test "compile fn declarations" {
         try testing.expectEqualSlices(u8, concatted_instr.items, got.instructions);
         for (t.expectedConstants, 0..) |constant, i| {
             try testing.expectEqual(true, constant.equal(got.constants[i]));
+        }
+    }
+}
+
+test "resolve local symbol table" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const global = new_symbol_table(null, allocator);
+    _ = try global.add_symbol("a");
+    _ = try global.add_symbol("b");
+
+    const local = new_symbol_table(global, allocator);
+    _ = try local.add_symbol("c");
+    _ = try local.add_symbol("d");
+
+    const expected = [_]Symbol{
+        Symbol{ .name = "a", .scope = global_scope, .idx = 0 },
+        Symbol{ .name = "b", .scope = global_scope, .idx = 1 },
+        Symbol{ .name = "c", .scope = local_scope, .idx = 0 },
+        Symbol{ .name = "d", .scope = local_scope, .idx = 1 },
+    };
+
+    for (expected) |e| {
+        const got = local.get_symbol(e.name);
+        if (got) |g| {
+            try testing.expectEqualStrings(e.name, g.name);
+            try testing.expectEqualStrings(e.scope, g.scope);
+            try testing.expectEqual(e.idx, g.idx);
+        } else unreachable;
+    }
+}
+
+test "resolve nested symbol table" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const global = new_symbol_table(null, allocator);
+    _ = try global.add_symbol("a");
+    _ = try global.add_symbol("b");
+
+    const first_local = new_symbol_table(global, allocator);
+    _ = try first_local.add_symbol("c");
+    _ = try first_local.add_symbol("d");
+
+    const second_local = new_symbol_table(global, allocator);
+    _ = try second_local.add_symbol("e");
+    _ = try second_local.add_symbol("f");
+
+    const tests = [_]struct {
+        table: *SymbolTable,
+        symbols: [4]Symbol,
+    }{
+        .{
+            .table = first_local,
+            .symbols = [_]Symbol{
+                Symbol{ .name = "a", .scope = global_scope, .idx = 0 },
+                Symbol{ .name = "b", .scope = global_scope, .idx = 1 },
+                Symbol{ .name = "c", .scope = local_scope, .idx = 0 },
+                Symbol{ .name = "d", .scope = local_scope, .idx = 1 },
+            },
+        },
+        .{
+            .table = second_local,
+            .symbols = [_]Symbol{
+                Symbol{ .name = "a", .scope = global_scope, .idx = 0 },
+                Symbol{ .name = "b", .scope = global_scope, .idx = 1 },
+                Symbol{ .name = "e", .scope = local_scope, .idx = 0 },
+                Symbol{ .name = "f", .scope = local_scope, .idx = 1 },
+            },
+        },
+    };
+
+    for (tests) |t| {
+        for (t.symbols) |s| {
+            const got = t.table.get_symbol(s.name);
+            if (got) |g| {
+                try testing.expectEqualStrings(s.name, g.name);
+                try testing.expectEqualStrings(s.scope, g.scope);
+                try testing.expectEqual(s.idx, g.idx);
+            } else unreachable;
         }
     }
 }

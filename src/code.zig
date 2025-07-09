@@ -23,6 +23,8 @@ pub const Opcode = enum {
     opNull,
     opSetGlobal,
     opGetGlobal,
+    opSetLocal,
+    opGetLocal,
     opArray,
     opIndex,
     opCall,
@@ -107,6 +109,14 @@ pub const Opcode = enum {
                 .name = "opGetGlobal",
                 .operandWidth = &.{2},
             },
+            .opSetLocal => definition{
+                .name = "opSetLocal",
+                .operandWidth = &.{1},
+            },
+            .opGetLocal => definition{
+                .name = "opGetLocal",
+                .operandWidth = &.{1},
+            },
             .opArray => definition{
                 .name = "opArray",
                 .operandWidth = &.{2},
@@ -149,7 +159,15 @@ pub fn make(op: Opcode, operands: []const u64, allocator: mem.Allocator) []u8 {
 
     for (operands, width) |o, w| {
         switch (w) {
+            1 => {
+                assert(o <= std.math.maxInt(u8));
+
+                const byte: u8 = @intCast(o);
+                instruction.append(byte) catch unreachable;
+            },
             2 => {
+                assert(o <= std.math.maxInt(u16));
+
                 const high_byte: u8 = @intCast(o >> 8);
                 const low_byte: u8 = @intCast(o & 0xFF);
 
@@ -186,8 +204,10 @@ test "make instructions methods" {
         .{ .opcode = Opcode.opMinus, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opMinus)} },
         .{ .opcode = Opcode.opNot, .operand = &.{}, .expected_bytes = &.{@intFromEnum(Opcode.opNot)} },
         .{ .opcode = Opcode.opSetGlobal, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opSetGlobal), 0, 0 } },
-        .{ .opcode = Opcode.opGetGlobal, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opGetGlobal), 0, 0 } },
+        .{ .opcode = Opcode.opSetGlobal, .operand = &.{0}, .expected_bytes = &.{ @intFromEnum(Opcode.opSetGlobal), 0, 0 } },
         .{ .opcode = Opcode.opGetGlobal, .operand = &.{1}, .expected_bytes = &.{ @intFromEnum(Opcode.opGetGlobal), 0, 1 } },
+        .{ .opcode = Opcode.opSetLocal, .operand = &.{255}, .expected_bytes = &.{ @intFromEnum(Opcode.opSetLocal), 255 } },
+        .{ .opcode = Opcode.opGetLocal, .operand = &.{255}, .expected_bytes = &.{ @intFromEnum(Opcode.opGetLocal), 255 } },
     };
 
     for (tests) |t| {

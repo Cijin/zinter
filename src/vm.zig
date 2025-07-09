@@ -73,6 +73,9 @@ const VM = struct {
             const opcode: code.Opcode = @enumFromInt(instr);
             switch (opcode) {
                 .opConstant => {
+                    assert(instrs[ip + 1] <= std.math.maxInt(u16));
+                    assert(instrs[ip + 2] <= std.math.maxInt(u16));
+
                     var const_idx: u16 = @intCast(instrs[ip + 1]);
                     const_idx <<= 8;
                     const_idx |= @intCast(instrs[ip + 2]);
@@ -220,6 +223,9 @@ const VM = struct {
                     frame.ip = jump_pos - 1;
                 },
                 .opSetGlobal => {
+                    assert(instrs[ip + 1] <= std.math.maxInt(u16));
+                    assert(instrs[ip + 2] <= std.math.maxInt(u16));
+
                     var ident_idx: u16 = @intCast(instrs[ip + 1]);
                     ident_idx <<= 8;
                     ident_idx |= @intCast(instrs[ip + 2]);
@@ -228,6 +234,9 @@ const VM = struct {
                     self.globals[ident_idx] = self.pop();
                 },
                 .opGetGlobal => {
+                    assert(instrs[ip + 1] <= std.math.maxInt(u16));
+                    assert(instrs[ip + 2] <= std.math.maxInt(u16));
+
                     var ident_idx: u16 = @intCast(instrs[ip + 1]);
                     ident_idx <<= 8;
                     ident_idx |= @intCast(instrs[ip + 2]);
@@ -784,6 +793,14 @@ test "virtual machine fn calls" {
             \\ noReturn();
             ,
             .expectedObj = object.Object{ .null = .{} },
+        },
+        .{
+            .input =
+            \\ let returnsOne = fn() { return 1; };
+            \\ let returnsOneReturner = fn() { return returnsOne; };
+            \\ returnsOneReturner()();
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 1 } },
         },
     };
 
