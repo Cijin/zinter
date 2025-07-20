@@ -46,7 +46,7 @@ const Symbol = struct {
 const SymbolTable = struct {
     prev: ?*SymbolTable,
     symbols: std.StringHashMap(Symbol),
-    symbol_count: u64,
+    symbol_count: u32,
 
     pub fn get(self: *SymbolTable, k: []const u8) ?Symbol {
         if (self.symbols.get(k)) |v| {
@@ -256,7 +256,7 @@ const Compiler = struct {
                         self.new_scope();
                         try self.compile(ast.Node{ .statement = .{ .block_statement = fn_lit.body } });
 
-                        // handles cases where either function body is empty or implicit returns
+                        // handles cases where either function body is empty or implicitly returns
                         if (self.scopes[self.scope_idx].last_instr) |li| {
                             if (li.opcode != .opReturnValue and li.opcode != .opReturn) {
                                 if (li.opcode == code.Opcode.opPop) {
@@ -268,8 +268,13 @@ const Compiler = struct {
                             _ = try self.emit(code.Opcode.opReturn, &.{});
                         }
 
+                        // get count before exiting scope
+                        const symbol_count = self.symbol_table.symbol_count;
                         const instrs = self.exit_scope();
-                        const fn_instrs = object.Object{ .fn_instrs = .{ .value = instrs } };
+                        const fn_instrs = object.Object{ .fn_instrs = .{
+                            .value = instrs,
+                            .symbol_count = symbol_count,
+                        } };
 
                         const idx = try self.add_constant(fn_instrs);
                         _ = try self.emit(code.Opcode.opConstant, &.{idx});
@@ -943,6 +948,7 @@ test "compile fn declarations" {
                                 code.make(code.Opcode.opReturnValue, &.{}, allocator),
                             },
                         ),
+                        .symbol_count = 0,
                     },
                 },
             },
@@ -968,6 +974,7 @@ test "compile fn declarations" {
                                 code.make(code.Opcode.opReturn, &.{}, allocator),
                             },
                         ),
+                        .symbol_count = 2,
                     },
                 },
             },
@@ -992,6 +999,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 2,
                 } },
             },
             .expectedInstructions = &.{
@@ -1015,6 +1023,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 2,
                 } },
             },
             .expectedInstructions = &.{
@@ -1036,6 +1045,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 1,
                 } },
             },
             .expectedInstructions = &.{
@@ -1057,6 +1067,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturn, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1076,6 +1087,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturn, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1100,6 +1112,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1131,6 +1144,7 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 1,
                 } },
             },
             .expectedInstructions = &.{
@@ -1167,10 +1181,72 @@ test "compile fn declarations" {
                             code.make(code.Opcode.opReturnValue, &.{}, allocator),
                         },
                     ),
+                    .symbol_count = 2,
                 } },
             },
             .expectedInstructions = &.{
                 code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opPop, &.{}, allocator),
+            },
+        },
+        .{
+            .input =
+            \\ let oneAndTwo = fn() { let one = 1; let two = 2; one + two; };
+            \\ let threeAndFour = fn() { let three = 3; let four = 4; three + four; };
+            \\ oneAndTwo() + threeAndFour();
+            ,
+            .expectedConstants = &.{
+                object.Object{ .integer = .{ .value = 1 } },
+                object.Object{ .integer = .{ .value = 2 } },
+                object.Object{
+                    .fn_instrs = .{
+                        .value = try mem.concat(
+                            allocator,
+                            u8,
+                            &[_][]const u8{
+                                code.make(code.Opcode.opConstant, &.{0}, allocator),
+                                code.make(code.Opcode.opSetLocal, &.{0}, allocator),
+                                code.make(code.Opcode.opConstant, &.{1}, allocator),
+                                code.make(code.Opcode.opSetLocal, &.{1}, allocator),
+                                code.make(code.Opcode.opGetLocal, &.{0}, allocator),
+                                code.make(code.Opcode.opGetLocal, &.{1}, allocator),
+                                code.make(code.Opcode.opAdd, &.{}, allocator),
+                                code.make(code.Opcode.opReturn, &.{}, allocator),
+                            },
+                        ),
+                        .symbol_count = 2,
+                    },
+                },
+                object.Object{ .integer = .{ .value = 3 } },
+                object.Object{ .integer = .{ .value = 4 } },
+                object.Object{ .fn_instrs = .{
+                    .value = try mem.concat(
+                        allocator,
+                        u8,
+                        &[_][]const u8{
+                            code.make(code.Opcode.opConstant, &.{3}, allocator),
+                            code.make(code.Opcode.opSetLocal, &.{0}, allocator),
+                            code.make(code.Opcode.opConstant, &.{4}, allocator),
+                            code.make(code.Opcode.opSetLocal, &.{1}, allocator),
+                            code.make(code.Opcode.opGetLocal, &.{0}, allocator),
+                            code.make(code.Opcode.opGetLocal, &.{1}, allocator),
+                            code.make(code.Opcode.opAdd, &.{}, allocator),
+                            code.make(code.Opcode.opReturn, &.{}, allocator),
+                        },
+                    ),
+                    .symbol_count = 2,
+                } },
+            },
+            .expectedInstructions = &.{
+                code.make(code.Opcode.opConstant, &.{2}, allocator),
+                code.make(code.Opcode.opSetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opConstant, &.{5}, allocator),
+                code.make(code.Opcode.opSetGlobal, &.{1}, allocator),
+                code.make(code.Opcode.opGetGlobal, &.{0}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
+                code.make(code.Opcode.opGetGlobal, &.{1}, allocator),
+                code.make(code.Opcode.opCall, &.{}, allocator),
+                code.make(code.Opcode.opAdd, &.{}, allocator),
                 code.make(code.Opcode.opPop, &.{}, allocator),
             },
         },

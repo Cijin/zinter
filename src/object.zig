@@ -82,6 +82,7 @@ pub const Integer = struct {
 
 pub const FnInstrs = struct {
     value: []const u8,
+    symbol_count: u32,
 
     fn typ(_: FnInstrs) []const u8 {
         return FN_INSTR;

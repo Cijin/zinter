@@ -27,16 +27,18 @@ const RuntimeError = error{
 const Frame = struct {
     ip: i64,
     instr_obj: object.FnInstrs,
+    base_pointer: u32,
 
     fn instrs(self: *Frame) []const u8 {
         return self.instr_obj.value;
     }
 };
 
-fn new_frame(fn_instrs: object.FnInstrs) Frame {
+fn new_frame(fn_instrs: object.FnInstrs, base_pointer: u32) Frame {
     const frame = Frame{
         .ip = 0,
         .instr_obj = fn_instrs,
+        .base_pointer = base_pointer,
     };
 
     return frame;
@@ -82,6 +84,7 @@ const VM = struct {
                     frame.ip += 2;
 
                     assert(const_idx < self.constants.len);
+
                     try self.push(self.constants[const_idx]);
                 },
                 .opAdd => {
@@ -244,6 +247,22 @@ const VM = struct {
 
                     try self.push(self.globals[ident_idx]);
                 },
+                .opSetLocal => {
+                    assert(instrs[ip + 1] <= std.math.maxInt(u8));
+
+                    const ident_idx: u8 = @intCast(instrs[ip + 1]);
+                    frame.ip += 1;
+
+                    self.stack[frame.base_pointer + ident_idx] = self.pop();
+                },
+                .opGetLocal => {
+                    assert(instrs[ip + 1] <= std.math.maxInt(u8));
+
+                    const ident_idx: u8 = @intCast(instrs[ip + 1]);
+                    frame.ip += 1;
+
+                    try self.push(self.stack[frame.base_pointer + ident_idx]);
+                },
                 .opArray => {
                     var array_len: u16 = @intCast(instrs[ip + 1]);
                     array_len <<= 8;
@@ -285,11 +304,15 @@ const VM = struct {
 
                     self.add_frame(obj.fn_instrs);
                     self.current_frame().ip = -1;
+
+                    // base_pointer is just the current sp
+                    self.sp += obj.fn_instrs.symbol_count;
                 },
                 .opReturnValue => {
-                    self.remove_frame();
+                    const prev_frame = self.remove_frame();
 
                     const return_val = self.pop();
+                    self.sp = prev_frame.base_pointer;
 
                     const obj = self.pop();
                     assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
@@ -297,11 +320,13 @@ const VM = struct {
                     try self.push(return_val);
                 },
                 .opReturn => {
-                    self.remove_frame();
+                    const prev_frame = self.remove_frame();
+                    self.sp = prev_frame.base_pointer;
 
                     const obj = self.pop();
                     assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
 
+                    // implicit returns always return void(null)
                     try self.push(object.Object{ .null = .{} });
                 },
                 .opNull => {
@@ -317,12 +342,14 @@ const VM = struct {
 
     fn add_frame(self: *VM, fn_instrs: object.FnInstrs) void {
         self.frame_idx += 1;
-        self.frames[self.frame_idx] = new_frame(fn_instrs);
+        self.frames[self.frame_idx] = new_frame(fn_instrs, self.sp);
     }
 
-    fn remove_frame(self: *VM) void {
+    fn remove_frame(self: *VM) *Frame {
         assert(self.frame_idx >= 1);
         self.frame_idx -= 1;
+
+        return &self.frames[self.frame_idx + 1];
     }
 
     fn pop(self: *VM) object.Object {
@@ -369,8 +396,8 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
         .sp = 0,
     };
 
-    const program_instrs = object.FnInstrs{ .value = b.instructions };
-    vm.frames[0] = new_frame(program_instrs);
+    const program_instrs = object.FnInstrs{ .value = b.instructions, .symbol_count = 0 };
+    vm.frames[0] = new_frame(program_instrs, vm.sp);
     return vm;
 }
 
@@ -801,6 +828,40 @@ test "virtual machine fn calls" {
             \\ returnsOneReturner()();
             ,
             .expectedObj = object.Object{ .integer = .{ .value = 1 } },
+        },
+        .{
+            .input =
+            \\ let oneAndTwo = fn() { let one = 1; let two = 2; return one + two; };
+            \\ let threeAndFour = fn() { let three = 3; let four = 4; return three + four; };
+            \\ oneAndTwo() + threeAndFour();
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 10 } },
+        },
+        .{
+            .input =
+            \\ let firstFoobar = fn() { let foobar = 50; return foobar; };
+            \\ let secondFoobar = fn() { let foobar = 100; return foobar; };
+            \\ firstFoobar() + secondFoobar();
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 150 } },
+        },
+        .{
+            .input =
+            \\ let globalSeed = 50;
+            \\
+            \\ let minusOne = fn() {
+            \\  let num = 1;
+            \\  return globalSeed - num;
+            \\ }
+            \\
+            \\ let minusTwo = fn() {
+            \\  let num = 2;
+            \\  return globalSeed - num;
+            \\ }
+            \\
+            \\ minusOne() + minusTwo();
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 97 } },
         },
     };
 
