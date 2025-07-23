@@ -275,10 +275,13 @@ const Compiler = struct {
                         // get count before exiting scope
                         const symbol_count = self.symbol_table.symbol_count;
                         const instrs = self.exit_scope();
-                        const fn_instrs = object.Object{ .fn_instrs = .{
-                            .value = instrs,
-                            .symbol_count = symbol_count,
-                        } };
+                        const fn_instrs = object.Object{
+                            .fn_instrs = .{
+                                .value = instrs,
+                                .symbol_count = symbol_count,
+                                .param_count = @intCast(fn_lit.parameters.len),
+                            },
+                        };
 
                         const idx = try self.add_constant(fn_instrs);
                         _ = try self.emit(code.Opcode.opConstant, &.{idx});
@@ -958,6 +961,7 @@ test "compile fn declarations" {
                             },
                         ),
                         .symbol_count = 0,
+                        .param_count = 0,
                     },
                 },
             },
@@ -984,6 +988,7 @@ test "compile fn declarations" {
                             },
                         ),
                         .symbol_count = 2,
+                        .param_count = 0,
                     },
                 },
             },
@@ -1009,6 +1014,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 2,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1033,6 +1039,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 2,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1055,6 +1062,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 1,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1077,6 +1085,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 0,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1097,6 +1106,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 0,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1118,6 +1128,7 @@ test "compile fn declarations" {
                             },
                         ),
                         .symbol_count = 0,
+                        .param_count = 0,
                     },
                 },
                 object.Object{ .integer = .{ .value = 1 } },
@@ -1142,6 +1153,7 @@ test "compile fn declarations" {
                             },
                         ),
                         .symbol_count = 0,
+                        .param_count = 0,
                     },
                 },
                 object.Object{ .integer = .{ .value = 1 } },
@@ -1174,6 +1186,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 0,
+                    .param_count = 0,
                 } },
                 object.Object{ .integer = .{ .value = 1 } },
                 object.Object{ .integer = .{ .value = 2 } },
@@ -1205,6 +1218,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 0,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1237,6 +1251,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 1,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1274,6 +1289,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 2,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{
@@ -1307,6 +1323,7 @@ test "compile fn declarations" {
                             },
                         ),
                         .symbol_count = 2,
+                        .param_count = 0,
                     },
                 },
                 object.Object{ .integer = .{ .value = 3 } },
@@ -1327,6 +1344,7 @@ test "compile fn declarations" {
                         },
                     ),
                     .symbol_count = 2,
+                    .param_count = 0,
                 } },
             },
             .expectedInstructions = &.{

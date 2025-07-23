@@ -21,6 +21,7 @@ const RuntimeError = error{
     IncompatibleOperator,
     UnexpectedType,
     ArrayIndexOutOfBound,
+    FunctionArgumentMismatch,
     Oom,
 };
 
@@ -299,9 +300,6 @@ const VM = struct {
                     try self.push(arr.array.value[@intCast(idx.integer.value)]);
                 },
                 .opCall => {
-                    // Todo: check if argument count is as expected
-                    // Update fn object
-                    // Post update, remove args_count from new_frame
                     assert(instrs[ip + 1] <= std.math.maxInt(u8));
 
                     const args_count: u8 = @intCast(instrs[ip + 1]);
@@ -310,6 +308,10 @@ const VM = struct {
                     assert(self.sp >= args_count + 1);
                     var obj = self.stack[self.sp - 1 - args_count];
                     assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
+
+                    if (args_count != obj.fn_instrs.param_count) {
+                        return RuntimeError.FunctionArgumentMismatch;
+                    }
 
                     self.add_frame(obj.fn_instrs, args_count);
                     self.current_frame().ip = -1;
@@ -404,7 +406,11 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
         .sp = 0,
     };
 
-    const program_instrs = object.FnInstrs{ .value = b.instructions, .symbol_count = 0 };
+    const program_instrs = object.FnInstrs{
+        .value = b.instructions,
+        .symbol_count = 0,
+        .param_count = 0,
+    };
     vm.frames[0] = new_frame(program_instrs, vm.sp, 0);
     return vm;
 }
