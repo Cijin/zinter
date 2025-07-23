@@ -34,11 +34,11 @@ const Frame = struct {
     }
 };
 
-fn new_frame(fn_instrs: object.FnInstrs, base_pointer: u32) Frame {
+fn new_frame(fn_instrs: object.FnInstrs, base_pointer: u32, args_count: u8) Frame {
     const frame = Frame{
         .ip = 0,
         .instr_obj = fn_instrs,
-        .base_pointer = base_pointer,
+        .base_pointer = base_pointer - args_count,
     };
 
     return frame;
@@ -299,14 +299,22 @@ const VM = struct {
                     try self.push(arr.array.value[@intCast(idx.integer.value)]);
                 },
                 .opCall => {
-                    var obj = self.stack[self.sp - 1];
+                    // Todo: check if argument count is as expected
+                    // Update fn object
+                    // Post update, remove args_count from new_frame
+                    assert(instrs[ip + 1] <= std.math.maxInt(u8));
+
+                    const args_count: u8 = @intCast(instrs[ip + 1]);
+                    frame.ip += 1;
+
+                    assert(self.sp >= args_count + 1);
+                    var obj = self.stack[self.sp - 1 - args_count];
                     assert(mem.eql(u8, obj.typ(), object.FN_INSTR));
 
-                    self.add_frame(obj.fn_instrs);
+                    self.add_frame(obj.fn_instrs, args_count);
                     self.current_frame().ip = -1;
 
-                    // base_pointer is just the current sp
-                    self.sp += obj.fn_instrs.symbol_count;
+                    self.sp += obj.fn_instrs.symbol_count + args_count;
                 },
                 .opReturnValue => {
                     const prev_frame = self.remove_frame();
@@ -340,9 +348,9 @@ const VM = struct {
         return &self.frames[self.frame_idx];
     }
 
-    fn add_frame(self: *VM, fn_instrs: object.FnInstrs) void {
+    fn add_frame(self: *VM, fn_instrs: object.FnInstrs, args_count: u8) void {
         self.frame_idx += 1;
-        self.frames[self.frame_idx] = new_frame(fn_instrs, self.sp);
+        self.frames[self.frame_idx] = new_frame(fn_instrs, self.sp, args_count);
     }
 
     fn remove_frame(self: *VM) *Frame {
@@ -397,7 +405,7 @@ pub fn New(b: compiler.ByteCode, allocator: mem.Allocator) !*VM {
     };
 
     const program_instrs = object.FnInstrs{ .value = b.instructions, .symbol_count = 0 };
-    vm.frames[0] = new_frame(program_instrs, vm.sp);
+    vm.frames[0] = new_frame(program_instrs, vm.sp, 0);
     return vm;
 }
 
@@ -862,6 +870,30 @@ test "virtual machine fn calls" {
             \\ minusOne() + minusTwo();
             ,
             .expectedObj = object.Object{ .integer = .{ .value = 97 } },
+        },
+        .{
+            .input =
+            \\  let sum = fn(a, b) { return a + b; };
+            \\  sum(1, 2);
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 3 } },
+        },
+        .{
+            .input =
+            \\ let globalNum = 10;
+            \\
+            \\ let sum = fn(a, b) {
+            \\  let c = a + b;
+            \\  return c + globalNum;
+            \\ };
+            \\
+            \\ let outer = fn() {
+            \\  return sum(1, 2) + sum(3, 4) + globalNum;
+            \\ };
+            \\
+            \\ outer() + globalNum;
+            ,
+            .expectedObj = object.Object{ .integer = .{ .value = 50 } },
         },
     };
 

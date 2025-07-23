@@ -127,7 +127,7 @@ pub const Opcode = enum {
             },
             .opCall => definition{
                 .name = "opCall",
-                .operandWidth = &.{},
+                .operandWidth = &.{1},
             },
             .opReturnValue => definition{
                 .name = "opReturnValue",
